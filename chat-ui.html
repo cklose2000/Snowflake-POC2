@@ -229,6 +229,85 @@
             cursor: not-allowed;
         }
         
+        /* Dashboard UI Styles */
+        .dashboard-section {
+            padding: 15px 20px;
+            background: #f8f9fa;
+            border-top: 1px solid #e5e5e5;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .dashboard-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .dashboard-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .dashboard-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .progress-bar {
+            width: 200px;
+            height: 4px;
+            background: #e5e5e5;
+            border-radius: 2px;
+            overflow: hidden;
+            display: none;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 2px;
+            transition: width 0.3s;
+            width: 0%;
+        }
+        
+        .dashboard-status {
+            font-size: 13px;
+            color: #666;
+            display: none;
+        }
+        
+        .dashboard-result {
+            margin-top: 10px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            display: none;
+        }
+        
+        .dashboard-url {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .dashboard-url:hover {
+            text-decoration: underline;
+        }
+        
         .sidebar {
             width: 300px;
             background: white;
@@ -325,6 +404,20 @@
                     <button class="send-button" id="send-button">Send</button>
                 </div>
             </div>
+            
+            <!-- Dashboard Creation Section -->
+            <div class="dashboard-section">
+                <div>
+                    <button class="dashboard-button" id="dashboard-button">
+                        📊 Create Dashboard
+                    </button>
+                    <div class="dashboard-status" id="dashboard-status"></div>
+                </div>
+                <div class="progress-bar" id="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+            </div>
+            <div class="dashboard-result" id="dashboard-result"></div>
         </div>
 
         <div class="sidebar">
@@ -364,6 +457,13 @@
         const statusDot = document.getElementById('ws-status');
         const statusText = document.getElementById('status-text');
         const activityStream = document.getElementById('activity-stream');
+        
+        // Dashboard elements
+        const dashboardBtn = document.getElementById('dashboard-button');
+        const dashboardStatus = document.getElementById('dashboard-status');
+        const progressBar = document.getElementById('progress-bar');
+        const progressFill = document.getElementById('progress-fill');
+        const dashboardResult = document.getElementById('dashboard-result');
 
         // Connect to WebSocket
         function connect() {
@@ -428,6 +528,18 @@
                     
                 case 'activity':
                     addActivity(data);
+                    break;
+                    
+                case 'dashboard.progress':
+                    updateDashboardStatus(data.message, 'progress');
+                    break;
+                    
+                case 'dashboard.created':
+                    handleDashboardCreated(data);
+                    break;
+                    
+                case 'dashboard.error':
+                    handleDashboardError(data);
                     break;
                     
                 default:
@@ -561,6 +673,118 @@
             messagesEl.scrollTop = messagesEl.scrollHeight;
         }
 
+        // Dashboard functions
+        function updateDashboardStatus(message, type = 'info') {
+            dashboardStatus.textContent = message;
+            dashboardStatus.className = `dashboard-status ${type}`;
+            dashboardStatus.style.display = 'block';
+        }
+        
+        function handleDashboardCreated(data) {
+            // Update status
+            updateDashboardStatus('Dashboard created successfully!', 'success');
+            
+            // Show result with URL
+            dashboardResult.innerHTML = `
+                <div class="message message-info">
+                    <div class="message-content">
+                        <strong>📊 Dashboard Ready!</strong><br>
+                        <span>Spec ID: ${data.spec_id}</span><br>
+                        <a href="${data.url}" target="_blank" class="dashboard-url">Open Dashboard →</a><br>
+                        <small>Panels: ${data.panelCount || 'N/A'} | Cost Estimate: ${data.estimatedCost || 'N/A'}</small>
+                    </div>
+                </div>
+            `;
+            dashboardResult.style.display = 'block';
+            
+            // Re-enable button
+            dashboardBtn.disabled = false;
+            dashboardBtn.textContent = '📊 Create Dashboard';
+            
+            // Add to conversation
+            addMessage(`Dashboard created successfully! [View Dashboard](${data.url})`, 'info');
+        }
+        
+        function handleDashboardError(data) {
+            // Update status
+            updateDashboardStatus(`Error: ${data.message}`, 'error');
+            
+            // Show error details
+            dashboardResult.innerHTML = `
+                <div class="message message-error">
+                    <div class="message-content">
+                        <strong>❌ Dashboard Creation Failed</strong><br>
+                        <span>Code: ${data.code}</span><br>
+                        <span>${data.message}</span>
+                    </div>
+                </div>
+            `;
+            dashboardResult.style.display = 'block';
+            
+            // Re-enable button
+            dashboardBtn.disabled = false;
+            dashboardBtn.textContent = '📊 Create Dashboard';
+            
+            // Add to conversation
+            addMessage(`Dashboard creation failed: ${data.message}`, 'error');
+        }
+        
+        function collectConversationHistory() {
+            // Collect last 10 messages from conversation
+            const messages = [];
+            const allMessages = messagesEl.querySelectorAll('.message');
+            const recentMessages = Array.from(allMessages).slice(-10);
+            
+            recentMessages.forEach(msg => {
+                const content = msg.querySelector('.message-content');
+                if (content) {
+                    const role = msg.classList.contains('message-user') ? 'user' : 'assistant';
+                    messages.push({
+                        role: role,
+                        content: content.textContent.trim()
+                    });
+                }
+            });
+            
+            return messages;
+        }
+        
+        function createDashboard() {
+            // Clear previous results
+            dashboardResult.style.display = 'none';
+            dashboardResult.innerHTML = '';
+            
+            // Disable button and show progress
+            dashboardBtn.disabled = true;
+            dashboardBtn.textContent = '⏳ Creating...';
+            updateDashboardStatus('Analyzing conversation...', 'progress');
+            
+            // Collect conversation history
+            const conversationHistory = collectConversationHistory();
+            
+            if (conversationHistory.length === 0) {
+                updateDashboardStatus('No conversation history found. Please have a conversation first.', 'error');
+                dashboardBtn.disabled = false;
+                dashboardBtn.textContent = '📊 Create Dashboard';
+                return;
+            }
+            
+            // Send dashboard creation request
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                console.log('Sending dashboard creation request');
+                ws.send(JSON.stringify({
+                    type: 'dashboard-create',
+                    sessionId: sessionId,
+                    conversationHistory: conversationHistory,
+                    customerID: sessionId // Use session as customer ID for now
+                }));
+            } else {
+                updateDashboardStatus('Not connected to server', 'error');
+                dashboardBtn.disabled = false;
+                dashboardBtn.textContent = '📊 Create Dashboard';
+            }
+        }
+        
         // Insert template command
         function insertTemplate(templateName) {
             let command = `/sql ${templateName} `;
@@ -584,6 +808,9 @@
 
         // Event listeners
         sendBtn.addEventListener('click', sendMessage);
+        
+        // Dashboard button listener
+        dashboardBtn.addEventListener('click', createDashboard);
         
         inputEl.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {

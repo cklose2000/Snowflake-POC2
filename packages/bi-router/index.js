@@ -29,9 +29,31 @@ class BIQueryRouter {
       [/(?:count|how many).*(?:activities|events|records)/i, { template: 'activity_summary', extractor: () => ({ hours: 24 }) }]
     ]);
 
+    // Dashboard creation patterns for direct routing to Dashboard Factory
+    this.dashboardRoutes = new Map([
+      // Direct dashboard requests
+      [/(?:create|build|make|generate).*dashboard/i, { action: 'create_dashboard', extractor: this.extractDashboardRequest }],
+      [/dashboard.*(?:showing|with|for)/i, { action: 'create_dashboard', extractor: this.extractDashboardRequest }],
+      [/I need a dashboard/i, { action: 'create_dashboard', extractor: this.extractDashboardRequest }],
+      
+      // Visualization requests that should become dashboards
+      [/(?:visualize|chart|graph|plot).*(?:this|these|data)/i, { action: 'create_dashboard', extractor: this.extractDashboardRequest }],
+      [/show.*(?:trends|over time|by month|by quarter)/i, { action: 'create_dashboard', extractor: this.extractDashboardRequest }],
+      
+      // Executive/reporting language
+      [/(?:executive|management|board) (?:dashboard|report)/i, { action: 'create_dashboard', extractor: this.extractDashboardRequest }],
+      [/(?:kpi|metrics|performance) dashboard/i, { action: 'create_dashboard', extractor: this.extractDashboardRequest }],
+      [/(?:sales|revenue|customer) dashboard/i, { action: 'create_dashboard', extractor: this.extractDashboardRequest }],
+      
+      // Multiple metric indicators
+      [/(?:track|monitor|watch).*(?:and|,).*(?:and|,)/i, { action: 'create_dashboard', extractor: this.extractDashboardRequest }],
+      [/(?:top \d+|bottom \d+).*(?:and|,).*(?:trends|over)/i, { action: 'create_dashboard', extractor: this.extractDashboardRequest }]
+    ]);
+
     // Performance tracking
     this.routeStats = {
       direct: { count: 0, totalTime: 0, totalCost: 0 },
+      dashboard: { count: 0, totalTime: 0, totalCost: 0 },
       lite: { count: 0, totalTime: 0, totalCost: 0 },
       full: { count: 0, totalTime: 0, totalCost: 0 }
     };
@@ -40,6 +62,24 @@ class BIQueryRouter {
   // Main routing decision engine
   classify(query) {
     const normalizedQuery = query.trim().toLowerCase();
+    
+    // Check for dashboard creation patterns first (Tier 0 - highest priority)
+    for (const [pattern, config] of this.dashboardRoutes) {
+      const match = normalizedQuery.match(pattern);
+      if (match) {
+        const dashboardData = config.extractor ? config.extractor(match, normalizedQuery) : {};
+        return {
+          tier: 0,
+          route: 'dashboard_factory',
+          action: config.action,
+          dashboardData: dashboardData,
+          confidence: 0.90,
+          expectedTime: 120000, // 2 minutes for dashboard creation
+          expectedCost: 0.08,
+          reasoning: `Dashboard creation pattern match: ${pattern}`
+        };
+      }
+    }
     
     // Check for direct SafeSQL patterns (Tier 1)
     for (const [pattern, config] of this.directRoutes) {
@@ -126,9 +166,60 @@ class BIQueryRouter {
     }
   }
 
+  // Extract dashboard requirements from query
+  extractDashboardRequest(match, query) {
+    const dashboardData = {
+      requestType: 'create',
+      originalQuery: query,
+      extractedRequirements: {}
+    };
+
+    // Extract top-N requirements
+    const topNMatch = query.match(/(?:top|first)\s+(\d+)/i);
+    if (topNMatch) {
+      dashboardData.extractedRequirements.topN = parseInt(topNMatch[1]);
+    }
+
+    // Extract metric keywords
+    const metrics = [];
+    const metricPatterns = {
+      revenue: /(?:revenue|sales|income|earnings)/i,
+      customers: /(?:customers?|clients?|accounts?)/i,
+      orders: /(?:orders?|purchases?|transactions?)/i,
+      quantity: /(?:quantity|volume|amount)/i,
+      profit: /(?:profit|margin)/i
+    };
+
+    for (const [metric, pattern] of Object.entries(metricPatterns)) {
+      if (pattern.test(query)) {
+        metrics.push(metric);
+      }
+    }
+    dashboardData.extractedRequirements.metrics = metrics;
+
+    // Extract time window
+    const timeMatch = query.match(/(?:last|past)\s+(\d+)\s+(days?|weeks?|months?|quarters?)/i);
+    if (timeMatch) {
+      dashboardData.extractedRequirements.timeWindow = {
+        value: parseInt(timeMatch[1]),
+        unit: timeMatch[2].toLowerCase()
+      };
+    }
+
+    // Extract schedule requirements
+    const scheduleMatch = query.match(/(?:daily|weekly|hourly|refresh.*(?:at|every))/i);
+    if (scheduleMatch) {
+      dashboardData.extractedRequirements.schedule = scheduleMatch[0];
+    }
+
+    return dashboardData;
+  }
+
   // Track routing performance for analytics
   trackPerformance(route, duration, cost, success) {
-    const tierName = route.tier === 1 ? 'direct' : route.tier === 2 ? 'lite' : 'full';
+    const tierName = route.tier === 0 ? 'dashboard' : 
+                     route.tier === 1 ? 'direct' : 
+                     route.tier === 2 ? 'lite' : 'full';
     const stats = this.routeStats[tierName];
     
     stats.count++;
@@ -137,11 +228,13 @@ class BIQueryRouter {
     
     // Log to Activity Schema (will be called by message router)
     return {
-      activity: 'ccode.query_routed',
+      activity: route.tier === 0 ? 'ccode.dashboard_routed' : 'ccode.query_routed',
       feature_json: {
         tier: route.tier,
         route_type: route.route,
         template: route.template || null,
+        action: route.action || null,
+        dashboard_data: route.dashboardData || null,
         duration_ms: duration,
         cost_usd: cost || 0,
         success: success,

@@ -70,25 +70,27 @@ USE WAREHOUSE CLAUDE_WAREHOUSE;
 
 ## 🗺️ SCHEMA AWARENESS - KNOW WHAT EXISTS
 
-### Exact Schema Structure (MEMORIZE THIS)
+### ACTUAL Snowflake Structure (THIS IS REAL - NOT NESTED!)
 
-```
+```sql
+-- Snowflake has FLAT schemas, not nested. This is the REAL structure:
 CLAUDE_BI (database)
-├── ANALYTICS (schema)
-│   ├── ACTIVITY (schema)
-│   │   └── EVENTS (table) ← Activity Schema 2.0 base stream
-│   └── ACTIVITY_CCODE (schema)  
-│       ├── ARTIFACTS (table) ← Result storage + metadata
-│       └── AUDIT_RESULTS (table) ← Audit outcomes
-└── PUBLIC (default schema - ignore)
+├── ACTIVITY (schema)
+│   └── EVENTS (table)          -- Full path: CLAUDE_BI.ACTIVITY.EVENTS
+├── ACTIVITY_CCODE (schema)  
+│   ├── ARTIFACTS (table)       -- Full path: CLAUDE_BI.ACTIVITY_CCODE.ARTIFACTS
+│   └── AUDIT_RESULTS (table)   -- Full path: CLAUDE_BI.ACTIVITY_CCODE.AUDIT_RESULTS
+├── ANALYTICS (schema)           -- Default schema after USE SCHEMA ANALYTICS
+│   └── SCHEMA_VERSION (table)  -- Full path: CLAUDE_BI.ANALYTICS.SCHEMA_VERSION
+└── PUBLIC (schema)              -- Ignore this
 ```
 
 ### Guaranteed Table Structures
 
-**analytics.activity.events** (Activity Schema 2.0 compliant)
+**CLAUDE_BI.ACTIVITY.EVENTS** (Activity Schema 2.0 compliant)
 ```sql
 -- ALWAYS EXISTS - never check if table exists
-CREATE TABLE analytics.activity.events (
+CREATE TABLE CLAUDE_BI.ACTIVITY.EVENTS (
   activity_id VARCHAR(255) NOT NULL,      -- PK
   ts TIMESTAMP_NTZ NOT NULL,              -- Event time (UTC)
   customer VARCHAR(255) NOT NULL,         -- Entity identifier  
@@ -109,10 +111,10 @@ CREATE TABLE analytics.activity.events (
 );
 ```
 
-**analytics.activity_ccode.artifacts**
+**CLAUDE_BI.ACTIVITY_CCODE.ARTIFACTS**
 ```sql
 -- ALWAYS EXISTS - artifact storage + metadata
-CREATE TABLE analytics.activity_ccode.artifacts (
+CREATE TABLE CLAUDE_BI.ACTIVITY_CCODE.ARTIFACTS (
   artifact_id VARCHAR(255) NOT NULL,      -- PK, links to activity.events.link
   sample VARIANT,                         -- Preview (≤10 rows)
   row_count INTEGER,                      -- Full result size
@@ -127,24 +129,39 @@ CREATE TABLE analytics.activity_ccode.artifacts (
 
 ### ✅ PROPER SCHEMA OPERATIONS
 
+```javascript
+// ALWAYS use the schema module - NEVER hardcode paths
+const schema = require('../snowflake-schema');
+
+// Get fully qualified name
+const eventsTable = schema.getFQN('ACTIVITY', 'EVENTS');
+// Returns: CLAUDE_BI.ACTIVITY.EVENTS
+
+// Or use two-part names after setting context
+const twoPartName = schema.getTwoPartName('ACTIVITY', 'EVENTS');
+// Returns: ACTIVITY.EVENTS
+```
+
 ```sql
--- Always qualify table names fully
-SELECT * FROM analytics.activity.events WHERE activity = 'ccode.sql_executed';
+-- With context set (USE DATABASE CLAUDE_BI; USE SCHEMA ANALYTICS)
+SELECT * FROM ACTIVITY.EVENTS WHERE activity = 'ccode.sql_executed';
 
 -- Always use parameterized queries
-SELECT * FROM analytics.activity.events WHERE customer = ? AND ts > ?;
+SELECT * FROM ACTIVITY.EVENTS WHERE customer = ? AND ts > ?;
 
--- Always limit large result sets
-SELECT * FROM analytics.activity.events ORDER BY ts DESC LIMIT 1000;
+-- Always limit large result sets  
+SELECT * FROM ACTIVITY.EVENTS ORDER BY ts DESC LIMIT 1000;
 ```
 
 ### ❌ BANNED SCHEMA OPERATIONS
 
+- ❌ Hardcoding table paths like `'analytics.activity.events'` - USE THE SCHEMA MODULE
 - ❌ `SHOW TABLES` or `DESCRIBE` commands (you know what exists)
 - ❌ `SELECT * FROM information_schema` exploration
 - ❌ Checking if tables exist with `IF EXISTS` 
 - ❌ Using unqualified table names like `SELECT * FROM events`
 - ❌ Running discovery queries like `SHOW SCHEMAS`
+- ❌ Writing `analytics.activity.events` anywhere - it's `CLAUDE_BI.ACTIVITY.EVENTS` or use schema module!
 
 ---
 

@@ -237,7 +237,7 @@ class SnowflakeObjectManager {
     return { count };
   }
 
-  // Run preflight checks before object creation
+  // Run preflight checks before object creation with fail-fast validation
   async runPreflightChecks(spec) {
     console.log(`🔍 Running preflight checks for: ${spec.name}`);
     
@@ -245,65 +245,203 @@ class SnowflakeObjectManager {
       passed: true,
       issues: [],
       warnings: [],
-      checks: {}
+      checks: {},
+      cost_estimate: 0,
+      estimated_objects: 0
     };
 
     try {
-      // Check 1: Schema permissions
-      const permissionResult = await this.executeSQL(
-        this.preflightChecks.schema_permissions, 
-        'CHECK PERMISSIONS'
-      );
-      results.checks.permissions = permissionResult.resultSet[0];
-      console.log(`✅ Permissions: ${results.checks.permissions.CURRENT_ROLE}`);
-
-      // Check 2: Warehouse availability (for Task scheduling)
-      if (spec.schedule.mode === 'exact') {
+      // Check 1: Privileges (CREATE VIEW, TASK, STREAMLIT)
+      console.log('🔧 Checking privileges...');
+      try {
+        const privilegeChecks = [
+          `SHOW GRANTS TO ROLE ${results.checks.permissions?.CURRENT_ROLE || 'CURRENT_ROLE'}`,
+          'SELECT CURRENT_ROLE(), CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_WAREHOUSE()'
+        ];
+        
+        const permissionResult = await this.executeSQL(privilegeChecks[1], 'CHECK PERMISSIONS');
+        results.checks.permissions = permissionResult.resultSet[0];
+        console.log(`✅ Current context: ${results.checks.permissions.CURRENT_ROLE}`);
+        
+        // Test CREATE VIEW privilege
         try {
-          const warehouseResult = await this.executeSQL(
-            this.preflightChecks.warehouse_exists, 
-            'CHECK WAREHOUSES'
-          );
-          results.checks.warehouses = warehouseResult.resultSet?.length || 0;
-          console.log(`✅ Warehouses available: ${results.checks.warehouses}`);
+          const testViewSQL = 'CREATE OR REPLACE VIEW test_dashboard_privilege_check AS SELECT 1 as test';
+          await this.executeSQL(testViewSQL, 'TEST CREATE VIEW');
+          await this.executeSQL('DROP VIEW IF EXISTS test_dashboard_privilege_check', 'CLEANUP TEST VIEW');
+          console.log(`✅ CREATE VIEW privilege confirmed`);
         } catch (error) {
-          results.warnings.push('warehouse_check_failed');
-          console.log(`⚠️ Warehouse check failed: ${error.message}`);
+          results.issues.push('insufficient_view_privileges');
+          results.passed = false;
+          console.log(`❌ CREATE VIEW privilege missing: ${error.message}`);
         }
+        
+        // Test warehouse usability
+        const warehouseName = results.checks.permissions.CURRENT_WAREHOUSE;
+        if (!warehouseName) {
+          results.issues.push('no_warehouse_context');
+          results.passed = false;
+          console.log(`❌ No warehouse in current context`);
+        } else {
+          console.log(`✅ Warehouse context: ${warehouseName}`);
+        }
+      } catch (error) {
+        results.issues.push('permission_check_failed');
+        results.passed = false;
+        console.log(`❌ Permission check failed: ${error.message}`);
       }
 
-      // Check 3: Dynamic Tables prerequisites (for freshness scheduling)
+      // Check 2: Dynamic Tables prerequisites (if DT mode)
       if (spec.schedule.mode === 'freshness') {
+        console.log('🔧 Checking Dynamic Tables prerequisites...');
         try {
-          const changeTrackingResult = await this.executeSQL(
-            this.preflightChecks.change_tracking, 
-            'CHECK CHANGE TRACKING'
-          );
+          // Check if any source tables have change tracking
+          const changeTrackingChecks = [];
+          for (const panel of spec.panels) {
+            const checkSQL = `
+              SELECT TABLE_NAME, CHANGE_TRACKING 
+              FROM INFORMATION_SCHEMA.TABLES 
+              WHERE TABLE_NAME = '${panel.source.toUpperCase()}' 
+                AND CHANGE_TRACKING = 'ON'
+            `;
+            changeTrackingChecks.push(this.executeSQL(checkSQL, `CHECK CHANGE TRACKING ${panel.source}`));
+          }
           
-          if (!changeTrackingResult.resultSet?.length) {
+          const changeTrackingResults = await Promise.all(changeTrackingChecks);
+          const hasChangeTracking = changeTrackingResults.some(result => result.resultSet?.length > 0);
+          
+          if (!hasChangeTracking) {
             results.issues.push('change_tracking_missing');
             results.passed = false;
-            console.log(`❌ Change tracking not enabled on any tables`);
+            console.log(`❌ No source tables have change tracking enabled - will fallback to Tasks`);
+            // Auto-fallback suggestion
+            results.fallback_suggestion = {
+              from: 'freshness',
+              to: 'exact',
+              reason: 'change_tracking_missing'
+            };
           } else {
-            console.log(`✅ Change tracking available`);
+            console.log(`✅ Change tracking available on source tables`);
           }
         } catch (error) {
-          results.issues.push('change_tracking_check_failed');
-          results.passed = false;
-          console.log(`❌ Change tracking check failed: ${error.message}`);
+          results.warnings.push('change_tracking_check_failed');
+          console.log(`⚠️ Change tracking check failed: ${error.message}`);
         }
       }
 
-      // Check 4: Source table availability
+      // Check 3: Name collisions (idempotent naming check)
+      console.log('🔧 Checking for name collisions...');
+      const specHash = require('./schema').generateSpecHash(spec);
+      const objectNames = require('./schema').generateObjectNames(spec);
+      
+      try {
+        // Check if any objects with this spec hash already exist
+        const existingObjects = [];
+        const objectChecks = [
+          `SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.VIEWS WHERE VIEW_NAME LIKE '%${specHash}'`,
+          `SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.TASKS WHERE NAME LIKE '%${specHash}'`
+        ];
+        
+        for (const checkSQL of objectChecks) {
+          try {
+            const result = await this.executeSQL(checkSQL, 'CHECK EXISTING OBJECTS');
+            if (result.resultSet[0]?.COUNT > 0) {
+              existingObjects.push(checkSQL.includes('VIEWS') ? 'views' : 'tasks');
+            }
+          } catch (error) {
+            console.log(`⚠️ Object existence check failed: ${error.message}`);
+          }
+        }
+        
+        if (existingObjects.length > 0) {
+          results.warnings.push('objects_exist_will_replace');
+          console.log(`⚠️ Existing objects found with hash ${specHash} - will be replaced`);
+        } else {
+          console.log(`✅ No name collisions detected for hash ${specHash}`);
+        }
+        
+        results.checks.spec_hash = specHash;
+        results.checks.object_names = objectNames;
+      } catch (error) {
+        results.warnings.push('name_collision_check_failed');
+        console.log(`⚠️ Name collision check failed: ${error.message}`);
+      }
+
+      // Check 4: Cost estimate (quick byte scan guard)
+      console.log('🔧 Estimating cost and data size...');
+      let totalEstimatedBytes = 0;
+      let estimatedObjects = 0;
+      
+      for (const panel of spec.panels) {
+        try {
+          // Quick sample to estimate data size
+          const sampleSQL = `
+            SELECT 
+              COUNT(*) as estimated_rows,
+              COUNT(*) * 100 as estimated_bytes  -- Rough estimate
+            FROM ${panel.source} 
+            ${panel.window ? this.buildTimeFilter(panel.window) : ''}
+            LIMIT 1000
+          `;
+          
+          const sampleResult = await this.executeSQL(sampleSQL, `ESTIMATE SIZE ${panel.source}`);
+          const estimatedRows = sampleResult.resultSet[0]?.ESTIMATED_ROWS || 0;
+          const estimatedBytes = sampleResult.resultSet[0]?.ESTIMATED_BYTES || 0;
+          
+          totalEstimatedBytes += estimatedBytes;
+          estimatedObjects += (panel.top_n ? 2 : 1) + 1; // views + task/dt
+          
+          results.checks[`panel_${panel.id}_size`] = {
+            estimated_rows: estimatedRows,
+            estimated_bytes: estimatedBytes,
+            has_window: !!panel.window,
+            top_n: panel.top_n
+          };
+          
+          // Warn on large datasets
+          if (estimatedBytes > 10000000) { // >10MB
+            results.warnings.push(`large_dataset_${panel.id}`);
+            console.log(`⚠️ Panel ${panel.id} processes large dataset: ${Math.round(estimatedBytes/1000000)}MB`);
+          } else {
+            console.log(`✅ Panel ${panel.id} size estimate: ${Math.round(estimatedBytes/1000)}KB`);
+          }
+          
+        } catch (error) {
+          results.warnings.push(`size_estimate_failed_${panel.source}`);
+          console.log(`⚠️ Size estimation failed for ${panel.source}: ${error.message}`);
+          estimatedObjects += 2; // Default estimate
+        }
+      }
+      
+      // Cost estimate (very rough)
+      results.cost_estimate = Math.max(totalEstimatedBytes / 10000000 * 0.01, 0.001); // ~$0.01 per 10MB
+      results.estimated_objects = estimatedObjects;
+      
+      const maxCost = parseFloat(process.env.MAX_DASHBOARD_COST_USD) || 0.10;
+      if (results.cost_estimate > maxCost) {
+        results.warnings.push('high_cost_estimate');
+        console.log(`⚠️ Estimated cost $${results.cost_estimate.toFixed(3)} exceeds limit $${maxCost}`);
+      } else {
+        console.log(`✅ Estimated cost: $${results.cost_estimate.toFixed(3)} (${estimatedObjects} objects)`);
+      }
+
+      // Check 5: Source table accessibility
+      console.log('🔧 Verifying source table access...');
       for (const panel of spec.panels) {
         try {
           const tableCheckSQL = `SELECT COUNT(*) as row_count FROM ${panel.source} LIMIT 1`;
           const tableResult = await this.executeSQL(tableCheckSQL, `CHECK TABLE ${panel.source}`);
-          results.checks[`table_${panel.source}`] = tableResult.resultSet[0]?.ROW_COUNT || 0;
-          console.log(`✅ Table ${panel.source} accessible`);
+          results.checks[`table_${panel.source}`] = {
+            accessible: true,
+            sample_count: tableResult.resultSet[0]?.ROW_COUNT || 0
+          };
+          console.log(`✅ Table ${panel.source} accessible (${results.checks[`table_${panel.source}`].sample_count} rows sampled)`);
         } catch (error) {
-          results.issues.push(`source_table_missing_${panel.source}`);
+          results.issues.push(`source_table_inaccessible_${panel.source}`);
           results.passed = false;
+          results.checks[`table_${panel.source}`] = {
+            accessible: false,
+            error: error.message
+          };
           console.log(`❌ Table ${panel.source} not accessible: ${error.message}`);
         }
       }
@@ -315,6 +453,7 @@ class SnowflakeObjectManager {
     }
 
     console.log(`🔍 Preflight results: ${results.passed ? 'PASSED' : 'FAILED'} (${results.issues.length} issues, ${results.warnings.length} warnings)`);
+    console.log(`📊 Estimated: ${results.estimated_objects} objects, $${results.cost_estimate.toFixed(3)} cost`);
     return results;
   }
 
@@ -376,10 +515,33 @@ class SnowflakeObjectManager {
     return { objectsDropped, errors };
   }
 
+  // Build time filter clause for window specifications
+  buildTimeFilter(window) {
+    if (!window) return '';
+    
+    let filterClause = 'WHERE ';
+    if (window.days) {
+      filterClause += `order_date >= CURRENT_DATE - ${window.days}`;
+    } else if (window.weeks) {
+      filterClause += `order_date >= CURRENT_DATE - ${window.weeks * 7}`;
+    } else if (window.months) {
+      filterClause += `order_date >= ADD_MONTHS(CURRENT_DATE, -${window.months})`;
+    } else if (window.quarters) {
+      filterClause += `order_date >= ADD_MONTHS(CURRENT_DATE, -${window.quarters * 3})`;
+    } else if (window.years) {
+      filterClause += `order_date >= ADD_YEARS(CURRENT_DATE, -${window.years})`;
+    } else {
+      return ''; // No valid window specification
+    }
+    
+    return filterClause;
+  }
+
   // Execute SQL with error handling and logging
   async executeSQL(sql, description = 'SQL') {
     try {
       console.log(`🔧 ${description}...`);
+      // Context is set once at connection time
       const result = await this.snowflake.execute({ sqlText: sql });
       return result;
     } catch (error) {

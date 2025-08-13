@@ -6,7 +6,7 @@ const ConversationAnalyzer = require('./conversation-analyzer');
 const SpecGenerator = require('./spec-generator');
 const SnowflakeObjectManager = require('./snowflake-objects');
 const StreamlitGenerator = require('./streamlit-generator');
-const ActivityLogger = require('../activity-schema');
+const ActivityLoggerWrapper = require('./activity-logger-wrapper');
 
 class DashboardFactory {
   constructor(snowflakeConnection, options = {}) {
@@ -22,7 +22,7 @@ class DashboardFactory {
     this.specGenerator = new SpecGenerator();
     this.objectManager = new SnowflakeObjectManager(snowflakeConnection);
     this.streamlitGenerator = new StreamlitGenerator();
-    this.activityLogger = new ActivityLogger(snowflakeConnection);
+    this.activityLogger = new ActivityLoggerWrapper(snowflakeConnection);
     
     // Track creation progress
     this.creationSteps = [

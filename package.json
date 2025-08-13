@@ -16,7 +16,10 @@
     "test": "npm run test --workspaces",
     "validate:victory": "node scripts/victory-audit.js",
     "agents:snowflake": "cd packages/agents/snowflake-agent && ccode --config ccode.toml",
-    "agents:audit": "cd packages/agents/audit-agent && ccode --config ccode.toml"
+    "agents:audit": "cd packages/agents/audit-agent && ccode --config ccode.toml",
+    "validate-schema": "node scripts/validate-schema.js",
+    "bootstrap-schema": "node scripts/run-bootstrap.js",
+    "lint:schemas": "eslint . --rule 'no-hardcoded-schemas: error'"
   },
   "devDependencies": {
     "concurrently": "^7.6.0"
