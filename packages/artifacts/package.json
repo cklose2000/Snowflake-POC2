@@ -1,0 +1,9 @@
+{
+  "name": "artifacts",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "writer.js",
+  "dependencies": {
+    "snowflake-sdk": "^1.9.0"
+  }
+}

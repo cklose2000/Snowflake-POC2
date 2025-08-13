@@ -1,0 +1,24 @@
+[agent]
+name = "snowflake-agent"
+description = "Handles all Snowflake operations with SafeSQL templates only"
+trigger_patterns = ["SELECT", "FROM", "snowflake", "query", "database"]
+auto_invoke = true
+
+[credentials]
+account = "${SNOWFLAKE_ACCOUNT}"
+username = "${SNOWFLAKE_USERNAME}"
+password = "${SNOWFLAKE_PASSWORD}"
+database = "${SNOWFLAKE_DATABASE}"
+schema = "${SNOWFLAKE_SCHEMA}"
+warehouse = "${SNOWFLAKE_WAREHOUSE}"
+role = "${SNOWFLAKE_ROLE}"
+
+[safesql]
+templates_only = true
+max_rows = 10000
+byte_cap = "5GB"
+auto_sample = true
+
+[query_tags]
+prefix = "ccode-ui"
+include_session = true

@@ -1,0 +1,25 @@
+[agent]
+name = "audit-agent"
+description = "Automatically verifies success claims and statements"
+trigger_patterns = ["✅", "successfully", "complete", "ready", "%"]
+auto_invoke = true
+
+[audit]
+strict_mode = true
+require_evidence = true
+auto_fail_unverifiable = false
+
+[patterns]
+success_indicators = [
+  "✅",
+  "complete",
+  "successfully",
+  "ready",
+  "readiness",
+  "\\d+%"
+]
+
+[storage]
+database = "${SNOWFLAKE_DATABASE}"
+schema = "activity_ccode"
+table = "audit_results"

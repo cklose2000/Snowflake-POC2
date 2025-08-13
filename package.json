@@ -1,0 +1,27 @@
+{
+  "name": "snowflakepoc2",
+  "version": "1.0.0",
+  "description": "Claude Desktop-like UI powered by Claude Code with Activity Schema 2.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "setup": "npm install && npm run setup:env && npm run setup:db",
+    "setup:env": "cp .env.example .env && echo 'Please edit .env with your credentials'",
+    "setup:db": "snowsql -f infra/snowflake/setup.sql",
+    "dev": "concurrently \"npm run dev:bridge\" \"npm run dev:ui\"",
+    "dev:bridge": "cd apps/ccode-bridge && npm run dev",
+    "dev:ui": "cd apps/ui-shell && npm run dev",
+    "test": "npm run test --workspaces",
+    "validate:victory": "node scripts/victory-audit.js",
+    "agents:snowflake": "cd packages/agents/snowflake-agent && ccode --config ccode.toml",
+    "agents:audit": "cd packages/agents/audit-agent && ccode --config ccode.toml"
+  },
+  "devDependencies": {
+    "concurrently": "^7.6.0"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  }
+}
