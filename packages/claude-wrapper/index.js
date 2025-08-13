@@ -1,4 +1,4 @@
-// Claude Code CLI Wrapper
+// Claude Code CLI Wrapper - Non-Interactive JSON Mode
 const { spawn } = require('child_process');
 const EventEmitter = require('events');
 
@@ -6,16 +6,16 @@ class ClaudeCodeWrapper extends EventEmitter {
   constructor(options = {}) {
     super();
     this.options = {
-      interactive: true,
+      outputFormat: 'json', // Use JSON for structured responses
       ...options
     };
-    this.process = null;
-    this.buffer = '';
+    this.sessions = new Map(); // Store conversation context per session
+    this.processManager = new ProcessSafetyManager();
     this.isReady = false;
   }
 
   start() {
-    console.log('🚀 Starting Claude Code CLI...');
+    console.log('🚀 Starting Claude Code CLI Wrapper (Non-Interactive Mode)...');
     
     // Check if claude is available
     const testProcess = spawn('which', ['claude']);
@@ -25,81 +25,194 @@ class ClaudeCodeWrapper extends EventEmitter {
         this.emit('error', new Error('Claude Code CLI not found'));
         return;
       }
-      this.spawnClaudeCode();
-    });
-  }
-
-  spawnClaudeCode() {
-    const args = [];
-    // Claude CLI doesn't have --interactive flag, it's interactive by default
-    
-    this.process = spawn('claude', args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env }
-    });
-
-    // Claude CLI is ready immediately after spawning
-    setTimeout(() => {
+      // In non-interactive mode, we're ready immediately
       this.isReady = true;
       this.emit('ready');
-      console.log('✅ Claude Code is ready for input');
-    }, 1000);
-
-    this.process.stdout.on('data', (data) => {
-      const text = data.toString();
-      this.buffer += text;
-      console.log('[Claude Output]:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
-
-      // Detect SQL intent
-      if (this.detectSQLIntent(text)) {
-        this.emit('sql-intent', {
-          text: text,
-          query: this.extractSQLQuery(text)
-        });
-      }
-
-      // Detect success claims
-      if (this.detectSuccessClaim(text)) {
-        this.emit('success-claim', {
-          text: text,
-          claim: this.extractClaim(text)
-        });
-      }
-
-      // Always emit the raw output
-      this.emit('output', text);
-    });
-
-    this.process.stderr.on('data', (data) => {
-      console.error('Claude Code stderr:', data.toString());
-      this.emit('error', data.toString());
-    });
-
-    this.process.on('close', (code) => {
-      console.log(`Claude Code exited with code ${code}`);
-      this.emit('close', code);
-    });
-
-    this.process.on('error', (err) => {
-      console.error('Failed to start Claude Code:', err);
-      this.emit('error', err);
+      console.log('✅ Claude Code wrapper ready (non-interactive mode)');
     });
   }
 
-  send(message) {
-    if (!this.process || !this.isReady) {
-      console.error('Claude Code not ready to receive messages');
-      return false;
+  async callClaude(message, sessionId = 'default') {
+    return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+      
+      // Get session context
+      const context = this.getSessionContext(sessionId);
+      const fullMessage = context ? `${context}\n\nUser: ${message}` : message;
+      
+      if (context) {
+        console.log(`📝 Using context for session ${sessionId} (${this.sessions.get(sessionId).messages.length} messages)`);
+      }
+      
+      // Spawn claude with --print and JSON output
+      const args = [
+        '--print',
+        '--output-format', this.options.outputFormat
+      ];
+      
+      const claudeProcess = spawn('claude', args, {
+        env: { ...process.env }
+      });
+      
+      // Track this process
+      this.processManager.track(claudeProcess);
+      
+      let output = '';
+      let errorOutput = '';
+      
+      claudeProcess.stdout.on('data', (data) => {
+        output += data.toString();
+      });
+      
+      claudeProcess.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+      });
+      
+      claudeProcess.on('close', (code) => {
+        const duration = Date.now() - startTime;
+        this.processManager.untrack(claudeProcess.pid);
+        
+        if (code !== 0) {
+          console.error(`Claude process exited with code ${code}`);
+          reject(new Error(`Claude failed: ${errorOutput}`));
+          return;
+        }
+        
+        try {
+          // Parse JSON response
+          const response = this.parseResponse(output);
+          
+          // Update session context
+          this.updateSessionContext(sessionId, message, response.result);
+          
+          // Log activity
+          this.logActivity('ccode.claude_response', {
+            session_id: sessionId,
+            duration_ms: duration,
+            tokens: response.usage,
+            cost_usd: response.total_cost_usd
+          });
+          
+          // Process response for intents
+          this.processResponse(response.result, sessionId);
+          
+          resolve(response);
+        } catch (error) {
+          console.error('Failed to parse Claude response:', error);
+          reject(error);
+        }
+      });
+      
+      // Send input
+      claudeProcess.stdin.write(fullMessage);
+      claudeProcess.stdin.end();
+    });
+  }
+
+  async send(message, sessionId = 'default') {
+    if (!this.isReady) {
+      console.error('Claude Code wrapper not ready');
+      return null;
     }
 
     // Log the interaction
     this.logActivity('ccode.user_asked', {
+      session_id: sessionId,
       message: message,
       timestamp: new Date().toISOString()
     });
 
-    this.process.stdin.write(message + '\n');
-    return true;
+    try {
+      const response = await this.callClaude(message, sessionId);
+      
+      // Emit the formatted output
+      this.emit('output', response.result);
+      
+      return response;
+    } catch (error) {
+      console.error('Failed to send message to Claude:', error);
+      this.emit('error', error.message);
+      return null;
+    }
+  }
+  
+  // Session context management
+  getSessionContext(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.messages.length === 0) return null;
+    
+    // Build context from recent messages (last 10)
+    const recentMessages = session.messages.slice(-10);
+    return recentMessages.map(m => `${m.role}: ${m.content}`).join('\n');
+  }
+  
+  updateSessionContext(sessionId, userMessage, assistantResponse) {
+    if (!this.sessions.has(sessionId)) {
+      this.sessions.set(sessionId, { messages: [], created: Date.now() });
+    }
+    
+    const session = this.sessions.get(sessionId);
+    session.messages.push(
+      { role: 'User', content: userMessage, timestamp: Date.now() },
+      { role: 'Assistant', content: assistantResponse, timestamp: Date.now() }
+    );
+    
+    // Limit context to last 20 messages
+    if (session.messages.length > 20) {
+      session.messages = session.messages.slice(-20);
+    }
+  }
+  
+  clearSession(sessionId) {
+    this.sessions.delete(sessionId);
+  }
+  
+  // Parse Claude's JSON response
+  parseResponse(output) {
+    try {
+      // The output might have multiple JSON objects, get the last one (the result)
+      const lines = output.trim().split('\n');
+      const resultLine = lines[lines.length - 1];
+      const parsed = JSON.parse(resultLine);
+      
+      // Extract the actual response text
+      if (parsed.result) {
+        return parsed;
+      } else if (parsed.message) {
+        // Handle assistant message format
+        return {
+          result: parsed.message.content[0].text,
+          usage: parsed.message.usage,
+          total_cost_usd: null
+        };
+      }
+      
+      return parsed;
+    } catch (error) {
+      // If not JSON, return as plain text
+      return { result: output, usage: null, total_cost_usd: null };
+    }
+  }
+  
+  // Process response for SQL intents and success claims
+  processResponse(text, sessionId) {
+    // Detect SQL intent
+    if (this.detectSQLIntent(text)) {
+      this.emit('sql-intent', {
+        session_id: sessionId,
+        text: text,
+        query: this.extractSQLQuery(text)
+      });
+    }
+
+    // Detect success claims
+    if (this.detectSuccessClaim(text)) {
+      this.emit('success-claim', {
+        session_id: sessionId,
+        text: text,
+        claim: this.extractClaim(text)
+      });
+    }
   }
 
   detectSQLIntent(text) {
@@ -183,10 +296,59 @@ class ClaudeCodeWrapper extends EventEmitter {
   }
 
   stop() {
-    if (this.process) {
-      this.process.kill();
-      this.process = null;
+    // Clean up all sessions
+    this.sessions.clear();
+    // Clean up any lingering processes
+    this.processManager.cleanup();
+  }
+}
+
+// Process Safety Manager - Tracks and safely manages Claude processes
+class ProcessSafetyManager {
+  constructor() {
+    this.activeProcesses = new Map();
+    this.protectedPids = new Set([38242]); // Protect the assistant's process
+    this.setupCleanupHandlers();
+  }
+  
+  setupCleanupHandlers() {
+    const cleanup = () => {
+      console.log('\n🧹 Cleaning up Claude processes...');
+      this.cleanup();
+    };
+    
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+    process.on('exit', cleanup);
+  }
+  
+  track(process) {
+    if (process && process.pid) {
+      if (this.protectedPids.has(process.pid)) {
+        console.warn(`⚠️ Attempted to track protected PID ${process.pid} - ignoring`);
+        return;
+      }
+      this.activeProcesses.set(process.pid, process);
+      console.log(`📝 Tracking Claude process ${process.pid}`);
     }
+  }
+  
+  untrack(pid) {
+    this.activeProcesses.delete(pid);
+  }
+  
+  cleanup() {
+    for (const [pid, proc] of this.activeProcesses) {
+      if (!this.protectedPids.has(pid)) {
+        try {
+          proc.kill('SIGTERM');
+          console.log(`✅ Cleaned up process ${pid}`);
+        } catch (error) {
+          // Process might already be dead
+        }
+      }
+    }
+    this.activeProcesses.clear();
   }
 }
 

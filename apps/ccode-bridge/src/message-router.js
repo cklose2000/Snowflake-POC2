@@ -13,19 +13,16 @@ class MessageRouter extends EventEmitter {
   }
 
   setupClaudeHandlers() {
-    // When Claude Code is ready
+    // When Claude Code wrapper is ready
     this.claudeWrapper.on('ready', () => {
-      console.log('✅ Claude Code is ready');
+      console.log('✅ Claude Code wrapper is ready');
       this.emit('claude-ready');
     });
 
     // When Claude outputs text
     this.claudeWrapper.on('output', (text) => {
       this.emit('claude-output', text);
-      this.broadcastToSessions({
-        type: 'assistant-message',
-        content: text
-      });
+      // Broadcast is handled in handleUserMessage after async call
     });
 
     // When Claude mentions SQL
@@ -35,9 +32,9 @@ class MessageRouter extends EventEmitter {
       // Try to map to a SafeSQL template
       const template = this.detectTemplate(data.text);
       if (template) {
-        await this.executeSafeSQL(template.name, template.params);
+        await this.executeSafeSQL(template.name, template.params, data.session_id);
       } else {
-        this.broadcastToSessions({
+        this.sendToSession(data.session_id, {
           type: 'info',
           content: 'SQL intent detected but no matching SafeSQL template found. Use one of: sample_top, recent_activities, activity_by_type, activity_summary'
         });
@@ -47,7 +44,7 @@ class MessageRouter extends EventEmitter {
     // When Claude claims success
     this.claudeWrapper.on('success-claim', (data) => {
       console.log('✅ Success claim detected:', data.claim);
-      this.emit('audit-needed', data.claim);
+      this.emit('audit-needed', { ...data.claim, session_id: data.session_id });
     });
 
     // Handle errors
@@ -84,13 +81,40 @@ class MessageRouter extends EventEmitter {
     if (message === '/help' || message === '/templates') {
       return this.sendTemplateHelp(sessionId);
     }
+    
+    // Check if it's a session management command
+    if (message === '/clear' || message === '/reset') {
+      this.claudeWrapper.clearSession(sessionId);
+      this.sendToSession(sessionId, {
+        type: 'info',
+        content: 'Session context cleared. Starting fresh conversation.'
+      });
+      return;
+    }
 
-    // Otherwise, send to Claude Code
-    const sent = this.claudeWrapper.send(message);
-    if (!sent) {
+    // Otherwise, send to Claude Code (now async)
+    try {
+      const sent = await this.claudeWrapper.send(message, sessionId);
+      if (sent) {
+        // Claude wrapper will emit 'output' event, which broadcasts to sessions
+        // We just need to wait for the response and then send it
+        this.claudeWrapper.once('output', (response) => {
+          this.sendToSession(sessionId, {
+            type: 'assistant-message',
+            content: response
+          });
+        });
+      } else {
+        this.sendToSession(sessionId, {
+          type: 'error',
+          content: 'Failed to send message to Claude. Please try again.'
+        });
+      }
+    } catch (error) {
+      console.error('Error handling user message:', error);
       this.sendToSession(sessionId, {
         type: 'error',
-        content: 'Claude Code is not ready. Please wait...'
+        content: `Error: ${error.message}`
       });
     }
   }
@@ -200,6 +224,11 @@ class MessageRouter extends EventEmitter {
   sendTemplateHelp(sessionId) {
     const templates = this.safesqlEngine.getTemplateList();
     const help = `
+Available Commands:
+  /help or /templates - Show this help
+  /clear or /reset - Clear conversation context
+  /sql [template] - Execute SafeSQL template
+
 Available SafeSQL Templates:
 ${templates.map(t => `  • ${t.name} (params: ${t.params.join(', ')})`).join('\n')}
 
