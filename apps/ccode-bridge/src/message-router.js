@@ -1,6 +1,7 @@
-// Message Router - Connects UI, Claude Code, and SafeSQL
+// Message Router - Connects UI, Claude Code, and SafeSQL with BI-First Smart Routing
 const ClaudeCodeWrapper = require('../../../packages/claude-wrapper');
 const SafeSQLTemplateEngine = require('../../../packages/safesql/template-engine-cjs');
+const BIQueryRouter = require('../../../packages/bi-router');
 const EventEmitter = require('events');
 
 class MessageRouter extends EventEmitter {
@@ -8,6 +9,7 @@ class MessageRouter extends EventEmitter {
     super();
     this.claudeWrapper = new ClaudeCodeWrapper();
     this.safesqlEngine = new SafeSQLTemplateEngine(snowflakeConnection);
+    this.biRouter = new BIQueryRouter();
     this.sessions = new Map();
     this.setupClaudeHandlers();
   }
@@ -61,9 +63,10 @@ class MessageRouter extends EventEmitter {
     this.claudeWrapper.start();
   }
 
-  // Handle message from UI
+  // Handle message from UI with BI-First Smart Routing
   async handleUserMessage(sessionId, message) {
     console.log(`[Session ${sessionId}] User: ${message}`);
+    const startTime = Date.now();
     
     // Log activity
     await this.logActivity('ccode.user_asked', {
@@ -92,26 +95,49 @@ class MessageRouter extends EventEmitter {
       return;
     }
 
-    // Otherwise, send to Claude Code (now async)
+    // BI-First Smart Routing: Classify the query
+    const route = this.biRouter.classify(message);
+    console.log(`🎯 Query classified as Tier ${route.tier} (${route.route}):`);
+    console.log(`   Expected: ${route.expectedTime}ms, $${route.expectedCost}`);
+    console.log(`   Reasoning: ${route.reasoning}`);
+
     try {
-      const sent = await this.claudeWrapper.send(message, sessionId);
-      if (sent) {
-        // Claude wrapper will emit 'output' event, which broadcasts to sessions
-        // We just need to wait for the response and then send it
-        this.claudeWrapper.once('output', (response) => {
-          this.sendToSession(sessionId, {
-            type: 'assistant-message',
-            content: response
-          });
-        });
-      } else {
-        this.sendToSession(sessionId, {
-          type: 'error',
-          content: 'Failed to send message to Claude. Please try again.'
-        });
+      let result = null;
+      let cost = 0;
+
+      switch (route.tier) {
+        case 1: // Direct SafeSQL routing
+          console.log(`⚡ Direct SafeSQL: ${route.template} with params:`, route.params);
+          result = await this.executeSafeSQL(route.template, route.params, sessionId);
+          cost = 0.001; // Minimal cost for direct query
+          break;
+
+        case 2: // Lite AI interpretation
+          console.log(`🧠 Lite AI interpretation needed`);
+          result = await this.handleLiteAI(sessionId, message, route);
+          cost = 0.05; // Estimated lite AI cost
+          break;
+
+        case 3: // Full Claude Code
+          console.log(`🚀 Full Claude Code processing`);
+          result = await this.handleFullClaude(sessionId, message);
+          cost = 0.20; // Estimated full Claude cost
+          break;
       }
+
+      // Track routing performance
+      const duration = Date.now() - startTime;
+      const perfData = this.biRouter.trackPerformance(route, duration, cost, result !== null);
+      await this.logActivity(perfData.activity, perfData.feature_json);
+
+      console.log(`✅ Query completed in ${duration}ms (expected ${route.expectedTime}ms)`);
+
     } catch (error) {
-      console.error('Error handling user message:', error);
+      console.error('Error in smart routing:', error);
+      const duration = Date.now() - startTime;
+      const perfData = this.biRouter.trackPerformance(route, duration, 0, false);
+      await this.logActivity(perfData.activity, { ...perfData.feature_json, error: error.message });
+
       this.sendToSession(sessionId, {
         type: 'error',
         content: `Error: ${error.message}`
@@ -272,6 +298,94 @@ Examples:
         ws.send(JSON.stringify(message));
       }
     }
+  }
+
+  // Handle Lite AI interpretation (Tier 2)
+  async handleLiteAI(sessionId, message, route) {
+    console.log(`🧠 Lite AI processing: "${message}"`);
+    
+    // Create minimal context for Claude
+    const liteContext = `You are a BI analyst assistant. Be concise and direct.
+Available SafeSQL templates: sample_top, recent_activities, activity_by_type, activity_summary.
+Always prefer suggesting SafeSQL templates when possible.
+
+Query: "${message}"
+
+Respond with either:
+1. A SafeSQL template suggestion: "/sql template_name param=value"  
+2. A brief analysis (max 100 words) if SafeSQL won't work`;
+
+    try {
+      // Use Claude with minimal context
+      const response = await this.claudeWrapper.callClaude(liteContext, `lite_${sessionId}`);
+      
+      if (response && response.result) {
+        // Check if Claude suggested a SafeSQL template
+        if (response.result.includes('/sql ')) {
+          const sqlMatch = response.result.match(/\/sql\s+([^\n]+)/);
+          if (sqlMatch) {
+            console.log(`🔄 Lite AI suggested SafeSQL: ${sqlMatch[1]}`);
+            // Execute the suggested template
+            await this.handleSQLCommand(sessionId, sqlMatch[1]);
+            return true;
+          }
+        }
+        
+        // Send the lite AI response
+        this.sendToSession(sessionId, {
+          type: 'assistant-message',
+          content: response.result
+        });
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Lite AI failed, falling back to full Claude:', error);
+      return await this.handleFullClaude(sessionId, message);
+    }
+  }
+
+  // Handle Full Claude Code (Tier 3) 
+  async handleFullClaude(sessionId, message) {
+    console.log(`🚀 Full Claude Code processing: "${message}"`);
+    
+    try {
+      const response = await this.claudeWrapper.send(message, sessionId);
+      
+      if (response) {
+        // Send the response directly to the session
+        console.log(`Sending Claude response to session ${sessionId}:`, response.result.substring(0, 100));
+        this.sendToSession(sessionId, {
+          type: 'assistant-message',
+          content: response.result
+        });
+        return true;
+      } else {
+        this.sendToSession(sessionId, {
+          type: 'error',
+          content: 'Failed to get response from Claude. Please try again.'
+        });
+        return false;
+      }
+    } catch (error) {
+      console.error('Full Claude failed:', error);
+      this.sendToSession(sessionId, {
+        type: 'error',
+        content: `Claude error: ${error.message}`
+      });
+      return false;
+    }
+  }
+
+  // Get routing statistics for admin/debugging
+  getRoutingStats() {
+    return this.biRouter.getStats();
+  }
+
+  // Get routing suggestions for a query (for debugging/optimization)
+  getQuerySuggestions(query) {
+    return this.biRouter.getSuggestions(query);
   }
 
   async logActivity(activity, feature_json) {

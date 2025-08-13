@@ -187,6 +187,53 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Routing statistics endpoint
+app.get('/api/routing-stats', (req, res) => {
+  if (!messageRouter) {
+    return res.status(503).json({ error: 'Message router not initialized' });
+  }
+  
+  try {
+    const stats = messageRouter.getRoutingStats();
+    res.json({
+      status: 'success',
+      timestamp: new Date().toISOString(),
+      routing_performance: stats
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: 'Failed to get routing stats', 
+      details: error.message 
+    });
+  }
+});
+
+// Query suggestion endpoint (for debugging/optimization)
+app.post('/api/query-suggestions', express.json(), (req, res) => {
+  if (!messageRouter) {
+    return res.status(503).json({ error: 'Message router not initialized' });
+  }
+  
+  const { query } = req.body;
+  if (!query) {
+    return res.status(400).json({ error: 'Query parameter required' });
+  }
+  
+  try {
+    const suggestions = messageRouter.getQuerySuggestions(query);
+    res.json({
+      status: 'success',
+      query: query,
+      suggestions: suggestions
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: 'Failed to get query suggestions', 
+      details: error.message 
+    });
+  }
+});
+
 // Start servers
 app.listen(PORT, () => {
   console.log(`\n🌉 API server running on http://localhost:${PORT}`);

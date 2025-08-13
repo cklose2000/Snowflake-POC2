@@ -119,6 +119,38 @@
             border: 1px solid #b8daff;
         }
         
+        .typing-dots {
+            display: inline-block;
+            color: #666;
+            font-style: italic;
+        }
+        
+        .typing-dots span {
+            animation: blink 1.4s infinite;
+            animation-fill-mode: both;
+        }
+        
+        .typing-dots span:nth-child(2) {
+            animation-delay: .2s;
+        }
+        
+        .typing-dots span:nth-child(3) {
+            animation-delay: .4s;
+        }
+        
+        .typing-dots span:nth-child(4) {
+            animation-delay: .6s;
+        }
+        
+        @keyframes blink {
+            0%, 60%, 100% {
+                opacity: 0.3;
+            }
+            30% {
+                opacity: 1;
+            }
+        }
+        
         .sql-result {
             margin: 10px 0;
             padding: 10px;
@@ -368,8 +400,17 @@
 
         // Handle incoming messages
         function handleMessage(data) {
+            console.log('Received message:', data);
+            
+            // Remove loading indicator when response arrives
+            const loadingIndicator = document.getElementById('loading-indicator');
+            if (loadingIndicator && (data.type === 'assistant-message' || data.type === 'error' || data.type === 'sql-result')) {
+                loadingIndicator.remove();
+            }
+            
             switch(data.type) {
                 case 'assistant-message':
+                    console.log('Adding assistant message:', data.content);
                     addMessage(data.content, 'assistant');
                     break;
                     
@@ -494,8 +535,17 @@
             messageDiv.innerHTML = `<div class="message-content">${formatMessage(message)}</div>`;
             messagesEl.appendChild(messageDiv);
             
+            // Add loading indicator
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'message message-assistant';
+            loadingDiv.id = 'loading-indicator';
+            loadingDiv.innerHTML = `<div class="message-content"><span class="typing-dots">Claude is thinking<span>.</span><span>.</span><span>.</span></span></div>`;
+            messagesEl.appendChild(loadingDiv);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            
             // Send to server
             if (ws && ws.readyState === WebSocket.OPEN) {
+                console.log('Sending message:', message);
                 ws.send(JSON.stringify({
                     type: 'user-message',
                     sessionId: sessionId,
