@@ -61,6 +61,51 @@ class SnowflakeSchemaConfig {
               'DETAILS'
             ]
           }
+        },
+        views: {
+          VW_ACTIVITY_COUNTS_24H: {
+            name: 'VW_ACTIVITY_COUNTS_24H',
+            description: 'Activity counts by type and customer for last 24 hours',
+            timeWindow: '24h'
+          },
+          VW_LLM_TELEMETRY: {
+            name: 'VW_LLM_TELEMETRY',
+            description: 'LLM usage telemetry including tokens and latency',
+            timeWindow: '7d'
+          },
+          VW_SQL_EXECUTIONS: {
+            name: 'VW_SQL_EXECUTIONS',
+            description: 'SQL execution telemetry with cost and performance',
+            timeWindow: '7d'
+          },
+          VW_DASHBOARD_OPERATIONS: {
+            name: 'VW_DASHBOARD_OPERATIONS',
+            description: 'Dashboard lifecycle events',
+            timeWindow: 'all'
+          },
+          VW_SAFESQL_TEMPLATES: {
+            name: 'VW_SAFESQL_TEMPLATES',
+            description: 'SafeSQL template usage patterns',
+            timeWindow: '30d'
+          },
+          VW_ACTIVITY_SUMMARY: {
+            name: 'VW_ACTIVITY_SUMMARY',
+            description: 'High-level activity metrics overview',
+            timeWindow: '24h'
+          }
+        },
+        procedures: {
+          DESTROY_DASHBOARD: {
+            name: 'DESTROY_DASHBOARD',
+            parameters: ['dashboard_name', 'spec_hash'],
+            returns: 'VARCHAR'
+          }
+        },
+        functions: {
+          LIST_DASHBOARDS: {
+            name: 'LIST_DASHBOARDS',
+            returns: 'TABLE'
+          }
         }
       },
       ANALYTICS: {

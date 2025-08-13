@@ -186,37 +186,27 @@ class DashboardFactory {
       };
     }
     
-    // Create Streamlit application in Snowflake
-    const createAppSQL = `
-      CREATE OR REPLACE STREAMLIT ${appName}
-      ROOT_LOCATION = '@STREAMLIT_STAGE'
-      MAIN_FILE = '${appName}.py'
-      QUERY_WAREHOUSE = '${objectNames.warehouse}'
-    `;
+    // Skip actual Streamlit deployment for now - just save the code
+    const fs = require('fs');
+    const path = require('path');
     
-    await this.snowflake.execute({ sqlText: createAppSQL });
+    // Save Streamlit code to file for manual deployment
+    const outputDir = path.join(__dirname, '../../generated-dashboards');
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
     
-    // Upload the Python file to the stage
-    const uploadSQL = `
-      PUT 'data:${Buffer.from(streamlitCode).toString('base64')}' '@STREAMLIT_STAGE/${appName}.py' 
-      SOURCE_COMPRESSION = NONE
-      AUTO_COMPRESS = FALSE
-      OVERWRITE = TRUE
-    `;
+    const outputPath = path.join(outputDir, `${appName}.py`);
+    fs.writeFileSync(outputPath, streamlitCode);
     
-    await this.snowflake.execute({ sqlText: uploadSQL });
+    console.log(`📄 Streamlit code saved to: ${outputPath}`);
+    console.log(`📝 Dashboard views created: ${spec.panels.map(p => `activity_dashboard__${p.id}__${generateSpecHash(spec)}`).join(', ')}`);
     
-    // Get Snowflake account identifier for URL
-    const accountResult = await this.snowflake.execute({
-      sqlText: "SELECT CURRENT_ACCOUNT() as account"
-    });
-    
-    const accountName = accountResult.resultSet[0].ACCOUNT;
-    const url = `https://${accountName}.snowflakecomputing.com/console#/streamlit-apps/${appName}`;
-    
+    // Return mock URL for now
     return {
-      url: url,
-      appName: appName
+      url: `file://${outputPath}`,
+      appName: appName,
+      message: 'Streamlit code saved locally. Deploy manually to Snowflake when ready.'
     };
   }
 

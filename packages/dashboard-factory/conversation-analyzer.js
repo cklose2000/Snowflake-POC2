@@ -1,400 +1,349 @@
-// Conversation Analyzer - Detects dashboard intent from BI conversation history
+// Conversation Analyzer - Detects Activity dashboard intent from conversation history
+// v2.0.0 - Activity-native patterns (no fake tables!)
 
 class ConversationAnalyzer {
   constructor() {
-    this.version = '1.0.0';
+    this.version = '2.0.0';
     
-    // Dashboard intent patterns
-    this.dashboardPatterns = [
-      // Direct dashboard requests
-      /(?:build|create|make|generate).*dashboard/i,
-      /dashboard.*(?:showing|with|for)/i,
-      /I need a dashboard/i,
+    // Activity dashboard intent patterns (primary patterns for v1)
+    this.activityDashboardPatterns = [
+      // Direct Activity dashboard requests
+      /(?:show|create|build).*activity.*(?:dashboard|metrics|patterns)/i,
+      /dashboard.*(?:activity|activities|events|operations)/i,
+      /activity.*(?:breakdown|summary|overview)/i,
       
-      // Visualization requests
-      /(?:visualize|chart|graph|plot).*(?:this|these|data)/i,
-      /show.*(?:trends|over time|by month|by quarter)/i,
+      // LLM/Claude performance requests
+      /(?:claude|llm|model).*(?:performance|latency|usage)/i,
+      /(?:token|tokens).*(?:usage|consumption|cost)/i,
+      /response.*(?:time|latency|speed)/i,
       
-      // Executive/reporting language
-      /(?:executive|management|board) (?:dashboard|report)/i,
-      /(?:kpi|metrics|performance) dashboard/i,
-      /(?:sales|revenue|customer) dashboard/i,
+      // SQL/Query performance requests
+      /(?:sql|query|queries).*(?:performance|cost|metrics)/i,
+      /(?:bytes|data).*(?:scanned|processed|cost)/i,
+      /query.*(?:patterns|usage|history)/i,
       
-      // Multiple metric indicators
-      /(?:track|monitor|watch).*(?:and|,).*(?:and|,)/i, // "track sales and customers and..."
-      /(?:top \d+|bottom \d+).*(?:and|,).*(?:trends|over)/i // "top 10 and trends over..."
+      // Dashboard operations requests
+      /dashboard.*(?:operations|lifecycle|metrics)/i,
+      /(?:created|refreshed|destroyed).*dashboards/i,
+      
+      // SafeSQL template requests
+      /(?:template|safesql).*(?:usage|patterns|popular)/i,
+      /which.*templates.*(?:used|popular|common)/i,
+      
+      // Generic Activity requests
+      /(?:telemetry|metrics|operations).*dashboard/i,
+      /(?:monitor|track|watch).*(?:activity|usage|performance)/i
     ];
     
-    // Anti-patterns (things that look like dashboard requests but aren't)
+    // Legacy patterns (for SAMPLES schema - Phase 1 only)
+    this.legacyDashboardPatterns = [
+      /(?:sales|revenue|customer).*dashboard/i,
+      /(?:build|create).*(?:sales|revenue).*(?:dashboard|report)/i
+    ];
+    
+    // Anti-patterns (not dashboard requests)
     this.antiPatterns = [
       /just show me/i,
       /quick question/i,
       /what is/i,
       /how do I/i,
-      /help me understand/i
+      /help me understand/i,
+      /can you explain/i
     ];
     
-    // Metric extraction patterns
-    this.metricPatterns = {
-      revenue: /(?:revenue|sales|income|earnings)/i,
-      customers: /(?:customers?|clients?|accounts?)/i,
-      orders: /(?:orders?|purchases?|transactions?)/i,
-      quantity: /(?:quantity|volume|amount|count)/i,
-      profit: /(?:profit|margin|earnings)/i,
-      growth: /(?:growth|increase|trend)/i
+    // Activity metric patterns
+    this.activityMetricPatterns = {
+      events: /(?:events?|activities|activity|actions?)/i,
+      llm_latency: /(?:latency|response time|speed)/i,
+      llm_tokens: /(?:tokens?|token usage|consumption)/i,
+      sql_cost: /(?:bytes|cost|data scanned)/i,
+      sql_performance: /(?:query|sql).*(?:performance|duration|time)/i,
+      dashboard_ops: /dashboard.*(?:operations?|created|refreshed)/i,
+      template_usage: /(?:template|safesql).*(?:usage|used|popular)/i
     };
     
-    // Time window patterns
-    this.timePatterns = {
-      days: /(?:last|past)\s+(\d+)\s+days?/i,
-      weeks: /(?:last|past)\s+(\d+)\s+weeks?/i,
-      months: /(?:last|past)\s+(\d+)\s+months?/i,
-      quarters: /(?:last|past)\s+(\d+)\s+quarters?/i,
-      years: /(?:last|past)\s+(\d+)\s+years?/i
+    // Time window patterns (fixed windows for v1)
+    this.timeWindows = {
+      '24h': /(?:last|past)?\s*24\s*hours?/i,
+      '7d': /(?:last|past)?\s*(?:7\s*days?|week)/i,
+      '30d': /(?:last|past)?\s*(?:30\s*days?|month)/i,
+      'all': /all\s*time/i
     };
     
-    // Panel type indicators
-    this.panelTypePatterns = {
-      table: /(?:list|table|top \d+|bottom \d+)/i,
-      timeseries: /(?:trends?|over time|by (?:month|quarter|week|day))/i,
-      metric: /(?:total|sum|average|count)/i,
-      chart: /(?:chart|graph|plot|visualize)/i
+    // Panel type detection
+    this.panelTypeIndicators = {
+      bar: /(?:top \d+|breakdown|by type|by activity)/i,
+      timeseries: /(?:over time|trends?|by (?:hour|day|week))/i,
+      histogram: /(?:distribution|histogram|latency)/i,
+      metrics: /(?:summary|overview|total|count)/i
     };
   }
 
-  // Main analysis method
+  // Main analysis method - Activity patterns first!
   async analyzeDashboardIntent(conversationHistory) {
     console.log(`🔍 Analyzing conversation for dashboard intent (${conversationHistory.length} messages)`);
     
-    // Combine all user messages into analysis text
+    // Combine all user messages
     const userMessages = conversationHistory
       .filter(msg => msg.type === 'user' || msg.role === 'user')
       .map(msg => msg.content || msg.message)
       .join(' ');
     
     if (!userMessages.trim()) {
-      return { isDashboardRequest: false, confidence: 0, reason: 'No user messages found' };
-    }
-    
-    // Calculate dashboard intent confidence
-    const intentScore = this.calculateDashboardIntentScore(userMessages);
-    
-    if (intentScore.total < 0.3) {
-      return {
-        isDashboardRequest: false,
-        confidence: Math.round(intentScore.total * 100),
-        reason: 'Insufficient dashboard indicators',
-        details: intentScore
+      return { 
+        isDashboardRequest: false, 
+        confidence: 0, 
+        reason: 'No user messages found' 
       };
     }
     
-    // Extract dashboard requirements
-    const requirements = this.extractDashboardRequirements(userMessages, conversationHistory);
+    // Check for Activity dashboard patterns FIRST
+    const activityScore = this.calculateActivityIntentScore(userMessages);
+    
+    // Only check legacy patterns if explicitly requested
+    const legacyScore = this.calculateLegacyIntentScore(userMessages);
+    
+    // Determine overall intent
+    const isActivityDashboard = activityScore >= 30;
+    const isLegacyDashboard = legacyScore >= 50 && userMessages.toLowerCase().includes('sample');
+    
+    if (!isActivityDashboard && !isLegacyDashboard) {
+      return {
+        isDashboardRequest: false,
+        confidence: Math.max(activityScore, legacyScore),
+        reason: 'No clear dashboard intent detected'
+      };
+    }
+    
+    // Extract requirements based on type
+    const requirements = isActivityDashboard 
+      ? await this.extractActivityRequirements(userMessages)
+      : await this.extractLegacyRequirements(userMessages);
     
     return {
       isDashboardRequest: true,
-      confidence: Math.round(intentScore.total * 100),
-      reason: `Dashboard intent detected with ${intentScore.indicators.length} indicators`,
+      confidence: isActivityDashboard ? activityScore : legacyScore,
+      type: isActivityDashboard ? 'activity' : 'legacy',
       requirements: requirements,
-      details: intentScore,
-      analysis: {
-        user_messages_analyzed: conversationHistory.length,
-        key_phrases: intentScore.matches,
-        suggested_metrics: requirements.metrics,
-        suggested_panels: requirements.panels
-      }
+      rawText: userMessages
     };
   }
 
-  // Calculate confidence score for dashboard intent
-  calculateDashboardIntentScore(text) {
-    const indicators = [];
-    const matches = [];
+  // Calculate Activity dashboard intent score
+  calculateActivityIntentScore(text) {
     let score = 0;
     
-    // Check for explicit dashboard patterns
-    for (const pattern of this.dashboardPatterns) {
-      const match = text.match(pattern);
-      if (match) {
-        indicators.push('explicit_dashboard_request');
-        matches.push(match[0]);
-        score += 0.4; // High weight for explicit requests
-        break; // Only count once
-      }
-    }
-    
-    // Check for anti-patterns (reduce confidence)
-    for (const pattern of this.antiPatterns) {
+    // Check for Activity dashboard patterns
+    this.activityDashboardPatterns.forEach(pattern => {
       if (pattern.test(text)) {
-        indicators.push('anti_pattern_detected');
-        score -= 0.2;
-        break;
+        score += 40;
       }
-    }
+    });
     
-    // Check for multiple metrics (indicator of dashboard need)
-    const metricCount = Object.keys(this.metricPatterns).filter(metric => 
-      this.metricPatterns[metric].test(text)
-    ).length;
-    
-    if (metricCount >= 2) {
-      indicators.push('multiple_metrics');
-      matches.push(`${metricCount} metrics detected`);
-      score += 0.3;
-    } else if (metricCount === 1) {
-      score += 0.1;
-    }
-    
-    // Check for time-based analysis (common in dashboards)
-    for (const [unit, pattern] of Object.entries(this.timePatterns)) {
+    // Check for Activity metrics
+    Object.values(this.activityMetricPatterns).forEach(pattern => {
       if (pattern.test(text)) {
-        indicators.push('time_analysis');
-        matches.push(`${unit} time window`);
-        score += 0.2;
-        break;
+        score += 20;
       }
-    }
+    });
     
-    // Check for "top N" patterns (common dashboard element)
-    const topNMatch = text.match(/(?:top|bottom)\s+(\d+)/i);
-    if (topNMatch) {
-      indicators.push('top_n_analysis');
-      matches.push(`top ${topNMatch[1]} analysis`);
-      score += 0.2;
-    }
+    // Bonus for multiple Activity indicators
+    const activityKeywords = ['activity', 'events', 'llm', 'claude', 'sql', 'query', 'template', 'telemetry'];
+    const keywordCount = activityKeywords.filter(kw => text.toLowerCase().includes(kw)).length;
+    score += keywordCount * 10;
     
-    // Check for visualization language
-    const vizPatterns = [/visualize/i, /chart/i, /graph/i, /plot/i];
-    if (vizPatterns.some(pattern => pattern.test(text))) {
-      indicators.push('visualization_request');
-      matches.push('visualization language');
-      score += 0.25;
-    }
+    // Reduce score for anti-patterns
+    this.antiPatterns.forEach(pattern => {
+      if (pattern.test(text)) {
+        score -= 20;
+      }
+    });
     
-    return {
-      total: Math.min(score, 1.0), // Cap at 100%
-      indicators: indicators,
-      matches: matches,
-      metric_count: metricCount
-    };
+    // Cap at 100
+    return Math.min(100, Math.max(0, score));
   }
 
-  // Extract specific requirements from conversation
-  extractDashboardRequirements(userMessages, conversationHistory) {
+  // Calculate legacy dashboard intent score (for SAMPLES schema)
+  calculateLegacyIntentScore(text) {
+    let score = 0;
+    
+    // Only score high if explicitly asking for sales/revenue dashboards
+    this.legacyDashboardPatterns.forEach(pattern => {
+      if (pattern.test(text)) {
+        score += 30;
+      }
+    });
+    
+    // Must explicitly mention sample/demo data
+    if (/(?:sample|demo|test|example)/i.test(text)) {
+      score += 20;
+    }
+    
+    return Math.min(100, Math.max(0, score));
+  }
+
+  // Extract Activity dashboard requirements
+  async extractActivityRequirements(text) {
     const requirements = {
-      name: this.extractDashboardName(userMessages),
-      timezone: this.extractTimezone(userMessages),
-      metrics: this.extractMetrics(userMessages),
-      panels: this.extractPanels(userMessages),
-      schedule: this.extractSchedulePreference(userMessages),
-      sources: this.extractDataSources(conversationHistory)
+      name: this.extractDashboardName(text) || 'activity_dashboard',
+      metrics: [],
+      panels: [],
+      timeWindow: this.extractTimeWindow(text),
+      schedule: this.extractSchedule(text),
+      timezone: this.extractTimezone(text)
     };
+    
+    // Extract Activity metrics
+    Object.entries(this.activityMetricPatterns).forEach(([metric, pattern]) => {
+      if (pattern.test(text)) {
+        requirements.metrics.push(metric);
+      }
+    });
+    
+    // Default to events if no metrics detected
+    if (requirements.metrics.length === 0) {
+      requirements.metrics.push('events');
+    }
+    
+    // Detect panel types
+    Object.entries(this.panelTypeIndicators).forEach(([type, pattern]) => {
+      if (pattern.test(text)) {
+        requirements.panels.push({ type });
+      }
+    });
+    
+    // Default panels if none detected
+    if (requirements.panels.length === 0) {
+      requirements.panels.push({ type: 'bar' });
+      requirements.panels.push({ type: 'metrics' });
+    }
     
     return requirements;
   }
 
-  // Extract dashboard name from conversation
+  // Extract legacy requirements (Phase 1 only)
+  async extractLegacyRequirements(text) {
+    return {
+      name: 'sample_dashboard',
+      metrics: ['revenue', 'customers'],
+      panels: [{ type: 'table' }],
+      sources: [{ table: 'SAMPLES.FACT_SALES' }],
+      note: 'Legacy dashboard using SAMPLES schema'
+    };
+  }
+
+  // Extract dashboard name from text
   extractDashboardName(text) {
-    // Look for explicit naming
+    // Look for explicit name patterns
     const namePatterns = [
-      /(?:call|name) (?:it|this|the dashboard) (.+?)(?:\.|$)/i,
-      /(?:executive|sales|ops|customer) dashboard/i,
-      /dashboard (?:for|showing) (.+?)(?:\.|$)/i
+      /dashboard (?:called|named) ["']?([^"']+)["']?/i,
+      /["']([^"']+)["'] dashboard/i,
+      /create (?:a|an) ([a-z_]+) dashboard/i
     ];
     
     for (const pattern of namePatterns) {
       const match = text.match(pattern);
-      if (match) {
-        const name = match[1] || match[0];
-        return name.toLowerCase()
-          .replace(/[^a-z0-9\s]/g, '')
-          .replace(/\s+/g, '_')
-          .substring(0, 32);
+      if (match && match[1]) {
+        return match[1].toLowerCase().replace(/[^a-z0-9_]/g, '_');
       }
     }
     
-    // Default names based on detected metrics
-    const metrics = this.extractMetrics(text);
-    if (metrics.includes('revenue') || metrics.includes('sales')) {
-      return 'sales_dashboard';
-    } else if (metrics.includes('customers')) {
-      return 'customer_dashboard';
-    } else {
-      return 'exec_dashboard';
-    }
+    // Generate name from detected metrics
+    if (text.includes('activity')) return 'activity_dashboard';
+    if (text.includes('llm') || text.includes('claude')) return 'llm_performance';
+    if (text.includes('sql') || text.includes('query')) return 'sql_analytics';
+    if (text.includes('template')) return 'template_usage';
+    
+    return null;
   }
 
-  // Extract timezone preference (default to ET for now)
+  // Extract time window (fixed windows for v1)
+  extractTimeWindow(text) {
+    for (const [window, pattern] of Object.entries(this.timeWindows)) {
+      if (pattern.test(text)) {
+        return { window };
+      }
+    }
+    // Default to 24h
+    return { window: '24h' };
+  }
+
+  // Extract schedule requirements
+  extractSchedule(text) {
+    const schedule = {
+      enabled: false,
+      frequency: null,
+      exact_time: null
+    };
+    
+    // Check for refresh/schedule patterns
+    if (/(?:refresh|update|run).*(?:daily|every day)/i.test(text)) {
+      schedule.enabled = true;
+      schedule.frequency = 'daily';
+    } else if (/(?:refresh|update|run).*(?:hourly|every hour)/i.test(text)) {
+      schedule.enabled = true;
+      schedule.frequency = 'hourly';
+    }
+    
+    // Extract specific time
+    const timeMatch = text.match(/at (\d{1,2}):?(\d{2})?\s*(am|pm|AM|PM)?/i);
+    if (timeMatch) {
+      schedule.exact_time = this.parseTime(timeMatch);
+    }
+    
+    // Default to 8am for daily schedules without specific time
+    if (schedule.frequency === 'daily' && !schedule.exact_time) {
+      schedule.exact_time = '08:00';
+    }
+    
+    return schedule;
+  }
+
+  // Extract timezone
   extractTimezone(text) {
-    const timezonePatterns = {
-      'America/New_York': /(?:eastern|et|est|edt|new york)/i,
-      'America/Chicago': /(?:central|ct|cst|cdt|chicago)/i,
-      'America/Denver': /(?:mountain|mt|mst|mdt|denver)/i,
-      'America/Los_Angeles': /(?:pacific|pt|pst|pdt|los angeles)/i,
-      'UTC': /(?:utc|gmt|universal)/i
+    const timezones = {
+      'et': 'America/New_York',
+      'eastern': 'America/New_York',
+      'ct': 'America/Chicago',
+      'central': 'America/Chicago',
+      'mt': 'America/Denver',
+      'mountain': 'America/Denver',
+      'pt': 'America/Los_Angeles',
+      'pacific': 'America/Los_Angeles',
+      'utc': 'UTC'
     };
     
-    for (const [timezone, pattern] of Object.entries(timezonePatterns)) {
-      if (pattern.test(text)) {
-        return timezone;
+    const lowercaseText = text.toLowerCase();
+    for (const [key, tz] of Object.entries(timezones)) {
+      if (lowercaseText.includes(key)) {
+        return tz;
       }
     }
     
-    return 'America/New_York'; // Default to Eastern
+    // Default to ET
+    return 'America/New_York';
   }
 
-  // Extract metrics from conversation
-  extractMetrics(text) {
-    const detectedMetrics = [];
+  // Parse time from regex match
+  parseTime(match) {
+    let hours = parseInt(match[1]);
+    const minutes = match[2] ? parseInt(match[2]) : 0;
+    const meridiem = match[3];
     
-    for (const [metric, pattern] of Object.entries(this.metricPatterns)) {
-      if (pattern.test(text)) {
-        detectedMetrics.push(metric);
+    if (meridiem) {
+      if (meridiem.toLowerCase() === 'pm' && hours < 12) {
+        hours += 12;
+      } else if (meridiem.toLowerCase() === 'am' && hours === 12) {
+        hours = 0;
       }
     }
     
-    // Map to allowed SafeSQL metrics
-    const metricMapping = {
-      revenue: 'SUM(revenue)',
-      customers: 'COUNT(DISTINCT customer_id)',
-      orders: 'COUNT(DISTINCT order_id)',
-      quantity: 'SUM(quantity)',
-      profit: 'SUM(profit)'
-    };
-    
-    return detectedMetrics.map(metric => metricMapping[metric]).filter(Boolean);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   }
 
-  // Extract panel requirements
-  extractPanels(text) {
-    const panels = [];
-    
-    // Detect top-N tables
-    const topNMatch = text.match(/(?:top|bottom)\s+(\d+)/i);
-    if (topNMatch) {
-      panels.push({
-        type: 'table',
-        requirement: `Top ${topNMatch[1]} analysis`,
-        top_n: parseInt(topNMatch[1])
-      });
-    }
-    
-    // Detect time series
-    if (/(?:trends?|over time|by (?:month|quarter))/i.test(text)) {
-      panels.push({
-        type: 'timeseries',
-        requirement: 'Trend analysis over time'
-      });
-    }
-    
-    // Default to table if no specific type detected
-    if (panels.length === 0) {
-      panels.push({
-        type: 'table',
-        requirement: 'Basic metric display',
-        top_n: 10
-      });
-    }
-    
-    return panels;
-  }
-
-  // Extract schedule preferences
-  extractSchedulePreference(text) {
-    // Look for exact time mentions
-    const exactTimePatterns = [
-      /(?:at|by) (\d{1,2}):?(\d{2})?\s*(?:am|pm)/i,
-      /(\d{1,2}):(\d{2})\s*(?:am|pm)/i,
-      /daily at/i,
-      /every morning/i
-    ];
-    
-    for (const pattern of exactTimePatterns) {
-      const match = text.match(pattern);
-      if (match) {
-        return {
-          mode: 'exact',
-          preference: 'user_specified_time',
-          extracted_time: match[0]
-        };
-      }
-    }
-    
-    // Look for freshness indicators
-    const freshnessPatterns = [
-      /(?:fresh|current|real.?time|up.?to.?date)/i,
-      /within (\d+) (?:minutes?|hours?)/i,
-      /refresh.*(\d+) (?:minutes?|hours?)/i
-    ];
-    
-    for (const pattern of freshnessPatterns) {
-      if (pattern.test(text)) {
-        return {
-          mode: 'freshness',
-          preference: 'data_freshness',
-          extracted_requirement: text.match(pattern)[0]
-        };
-      }
-    }
-    
-    // Default to daily morning refresh
-    return {
-      mode: 'exact',
-      preference: 'default_daily',
-      cron_utc: '0 12 * * *' // 8am ET = 12pm UTC (simplified)
-    };
-  }
-
-  // Extract data sources from SafeSQL conversation history
-  extractDataSources(conversationHistory) {
-    const sources = [];
-    
-    // Look for successful SafeSQL template executions
-    conversationHistory.forEach(msg => {
-      if (msg.type === 'sql-result' && msg.template) {
-        // These would be from the existing BI router
-        sources.push({
-          template: msg.template,
-          success: true,
-          row_count: msg.count
-        });
-      }
-    });
-    
-    // Default source table if none detected
-    if (sources.length === 0) {
-      sources.push({
-        table: 'fact_sales', // Default assumption
-        inferred: true
-      });
-    }
-    
-    return sources;
-  }
-
-  // Get analyzer version and capabilities
+  // Get analyzer version
   getVersion() {
-    return {
-      version: this.version,
-      capabilities: {
-        dashboard_patterns: this.dashboardPatterns.length,
-        metric_patterns: Object.keys(this.metricPatterns).length,
-        time_patterns: Object.keys(this.timePatterns).length,
-        panel_types: Object.keys(this.panelTypePatterns).length
-      }
-    };
-  }
-
-  // Test method for development
-  testAnalysis(sampleText) {
-    const score = this.calculateDashboardIntentScore(sampleText);
-    const requirements = this.extractDashboardRequirements(sampleText, []);
-    
-    return {
-      input: sampleText,
-      score: score,
-      requirements: requirements
-    };
+    return this.version;
   }
 }
 

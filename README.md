@@ -1,22 +1,22 @@
 # SnowflakePOC2
 
-Claude Desktop-like UI powered by Claude Code with Activity Schema 2.0 compliance, Dashboard Factory, and production-ready schema awareness.
+Claude Desktop-like UI powered by Claude Code with Activity Schema 2.0 compliance, Dashboard Factory v1 complete with Activity-native dashboards.
 
-## 🚀 Recent Updates
+## 🎉 Dashboard Factory v1 COMPLETE
 
-### Dashboard Factory v1 Integration (Phase 1 Complete)
-- ✅ WebSocket-based dashboard creation from conversation context
-- ✅ Real-time progress updates and status tracking
-- ✅ Activity Schema v2.0 strict compliance
-- ✅ Comprehensive preflight checks with fail-fast validation
-- ✅ BI-First Smart Routing for dashboard patterns
+### Activity Schema IS the Product (2025-08-13)
+- ✅ **Activity-Native Views**: 6 specialized views analyzing telemetry data
+- ✅ **Zero Fake Tables**: Activity Schema itself is the dataset
+- ✅ **Dashboard Generation Working**: Creates views, tasks, and Streamlit code
+- ✅ **Full Observability**: Every action logged to Activity stream
+- ✅ **Idempotent Operations**: Consistent naming with spec hashes
 
-### Production-Ready Schema Awareness
-- ✅ **Centralized Schema Module**: Single source of truth for all Snowflake objects
-- ✅ **Startup Validation**: Validates schema structure, privileges, and Activity Schema v2
-- ✅ **Environment-Aware**: No hardcoded database names, pulls from environment
-- ✅ **Clear Error Messages**: Shows exactly what's wrong and how to fix it
-- ✅ **Bootstrap Script**: Idempotent setup for consistent environments
+### What's Working Now
+- ✅ **Create dashboards from chat**: "Show activity dashboard" → working dashboard
+- ✅ **Activity telemetry views**: VW_ACTIVITY_COUNTS_24H, VW_LLM_TELEMETRY, etc.
+- ✅ **Automatic refresh tasks**: Scheduled with CRON expressions
+- ✅ **Streamlit generation**: Full dashboard code with charts and metrics
+- ✅ **Schema compliance**: Frozen spec v1 validation passing
 
 ## Features
 
@@ -36,17 +36,27 @@ git clone <this-repo>
 cd SnowflakePOC2
 npm install
 
-# Setup environment and bootstrap Snowflake schema
+# Setup environment
 cp .env.example .env
 # Edit .env with your Snowflake credentials
-npm run bootstrap-schema  # Creates required schemas and tables
-npm run validate-schema   # Verify everything is set up correctly
+
+# Bootstrap Activity views (one-time setup)
+node run-bootstrap.js  # Creates 6 Activity-native views
 
 # Start the integrated server
 node integrated-server.js
 
-# Or run individual components
-npm run dev
+# Open browser to http://localhost:3000
+# Try: "Show me an activity dashboard"
+```
+
+### Test Dashboard Creation
+```bash
+# Quick test of dashboard factory
+node test-minimal-dashboard.js
+
+# Verify created objects
+node verify-dashboard.js
 ```
 
 ## Schema Management
@@ -77,12 +87,18 @@ npm run lint:schemas
 ```
 CLAUDE_BI (database)
 ├── ACTIVITY (schema)
-│   └── EVENTS              # Activity Schema v2.0 event stream
+│   └── EVENTS                        # Activity Schema v2.0 event stream
 ├── ACTIVITY_CCODE (schema)
-│   ├── ARTIFACTS          # Generated artifacts storage
-│   └── AUDIT_RESULTS      # Audit verification outcomes
+│   ├── ARTIFACTS                     # Generated artifacts storage
+│   ├── AUDIT_RESULTS                 # Audit verification outcomes
+│   ├── VW_ACTIVITY_COUNTS_24H        # Activity breakdown (24h window)
+│   ├── VW_LLM_TELEMETRY              # LLM performance metrics
+│   ├── VW_SQL_EXECUTIONS             # SQL query analysis
+│   ├── VW_DASHBOARD_OPERATIONS       # Dashboard lifecycle events
+│   ├── VW_SAFESQL_TEMPLATES          # Template usage patterns
+│   └── VW_ACTIVITY_SUMMARY           # High-level metrics
 └── ANALYTICS (schema)
-    └── SCHEMA_VERSION     # Schema migration tracking
+    └── activity_dashboard__*         # Generated dashboard views
 ```
 
 ### Key Features
@@ -94,10 +110,14 @@ CLAUDE_BI (database)
 
 ## Development Status
 
-- ✅ Phase 1: Dashboard Factory Integration (COMPLETE)
-- ✅ Schema Awareness Implementation (COMPLETE)
-- 🚧 Phase 2: Meta Dashboard & Analytics (PENDING)
-- 🚧 Phase 3: Production Deployment (PENDING)
+- ✅ **Phase 1: Dashboard Factory v1** (COMPLETE 2025-08-13)
+  - Activity-native views created
+  - Dashboard generation from chat working
+  - Full Activity Schema observability
+  - Streamlit code generation
+- ✅ **Schema Awareness Implementation** (COMPLETE)
+- 🚧 **Phase 2: Meta Dashboard & Analytics** (NEXT)
+- 🚧 **Phase 3: Production Deployment** (PENDING)
 
 ## Contributing
 

@@ -1,321 +1,325 @@
-// Activity Logger Wrapper - Bridges CommonJS Dashboard Factory to ES Module Activity Schema
-// Provides strict Activity Schema v2.0 compliance for Dashboard Factory
+// Activity Logger Wrapper for Dashboard Factory
+// Ensures proper Activity Schema v2.0 compliance for dashboard operations
 
-const schema = require('../snowflake-schema');
+const snowflake = require('snowflake-sdk');
+const crypto = require('crypto');
 
-class ActivityLoggerWrapper {
+class DashboardActivityLogger {
   constructor(snowflakeConnection) {
     this.snowflake = snowflakeConnection;
-    this.version = '2.0.0';
-    this.sourceSystem = 'claude_code';
-    this.sourceVersion = 'dashboard_factory_v1.0.0';
-    
-    // Dashboard Factory specific activity types
-    this.activityTypes = {
-      'ccode.dashboard_intent': 'Dashboard intent detected in conversation',
-      'ccode.dashboard_spec_created': 'Dashboard specification created from intent', 
-      'ccode.dashboard_created': 'Dashboard successfully created and deployed',
-      'ccode.dashboard_refreshed': 'Dashboard data refreshed',
-      'ccode.dashboard_failed': 'Dashboard operation failed',
-      'ccode.dashboard_destroyed': 'Dashboard and all objects removed'
-    };
+    this.namespace = 'ccode';
+    this.sourceSystem = 'dashboard_factory';
+    this.sourceVersion = '1.0.0';
   }
 
-  // Main activity logging method with strict schema compliance
-  async logEvent(eventData) {
+  // Generate unique activity ID
+  generateActivityId(prefix = 'act') {
+    return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
+  }
+
+  // Log dashboard creation started
+  async logDashboardCreationStarted(spec, conversationContext) {
+    const activityId = this.generateActivityId('dash_create');
+    
+    const featureJson = {
+      spec_id: spec.name,
+      spec_hash: this.generateSpecHash(spec),
+      panels: spec.panels.length,
+      schedule: spec.schedule.mode,
+      timezone: spec.timezone,
+      conversation_length: conversationContext?.messages || 0,
+      intent_confidence: conversationContext?.confidence || 0
+    };
+
+    return await this.logActivity({
+      activityId,
+      activity: `${this.namespace}.dashboard_creation_started`,
+      customer: this.getCurrentUser(),
+      featureJson,
+      link: null
+    });
+  }
+
+  // Log dashboard creation completed
+  async logDashboardCreated(spec, results, streamlitUrl) {
+    const activityId = this.generateActivityId('dash_complete');
+    
+    const featureJson = {
+      spec_id: spec.name,
+      spec_hash: this.generateSpecHash(spec),
+      panels: spec.panels.length,
+      schedule: spec.schedule.mode,
+      objects_created: results.objectsCreated,
+      views_created: results.views?.length || 0,
+      tasks_created: results.tasks?.length || 0,
+      dynamic_tables_created: results.dynamicTables?.length || 0,
+      creation_time_ms: results.creationTimeMs,
+      streamlit_url: streamlitUrl
+    };
+
+    return await this.logActivity({
+      activityId,
+      activity: `${this.namespace}.dashboard_created`,
+      customer: this.getCurrentUser(),
+      featureJson,
+      link: streamlitUrl
+    });
+  }
+
+  // Log dashboard refresh
+  async logDashboardRefreshed(dashboardName, specHash) {
+    const activityId = this.generateActivityId('dash_refresh');
+    
+    const featureJson = {
+      dashboard_name: dashboardName,
+      spec_hash: specHash,
+      refresh_type: 'manual',
+      refreshed_at: new Date().toISOString()
+    };
+
+    return await this.logActivity({
+      activityId,
+      activity: `${this.namespace}.dashboard_refreshed`,
+      customer: this.getCurrentUser(),
+      featureJson,
+      link: null
+    });
+  }
+
+  // Log dashboard destruction
+  async logDashboardDestroyed(dashboardName, specHash, objectsDropped) {
+    const activityId = this.generateActivityId('dash_destroy');
+    
+    const featureJson = {
+      dashboard_name: dashboardName,
+      spec_hash: specHash,
+      objects_dropped: objectsDropped,
+      destroyed_at: new Date().toISOString()
+    };
+
+    return await this.logActivity({
+      activityId,
+      activity: `${this.namespace}.dashboard_destroyed`,
+      customer: this.getCurrentUser(),
+      featureJson,
+      link: null
+    });
+  }
+
+  // Log dashboard failure
+  async logDashboardFailed(spec, error, phase) {
+    const activityId = this.generateActivityId('dash_fail');
+    
+    const featureJson = {
+      spec_id: spec?.name || 'unknown',
+      spec_hash: spec ? this.generateSpecHash(spec) : null,
+      error_message: error.message,
+      error_code: error.code,
+      failure_phase: phase,
+      stack_trace: error.stack?.substring(0, 500) // Truncate for storage
+    };
+
+    return await this.logActivity({
+      activityId,
+      activity: `${this.namespace}.dashboard_failed`,
+      customer: this.getCurrentUser(),
+      featureJson,
+      link: null
+    });
+  }
+
+  // Log preflight check results
+  async logPreflightResults(spec, results) {
+    const activityId = this.generateActivityId('preflight');
+    
+    const featureJson = {
+      spec_id: spec.name,
+      spec_hash: this.generateSpecHash(spec),
+      passed: results.passed,
+      issues: results.issues,
+      warnings: results.warnings,
+      cost_estimate: results.cost_estimate,
+      estimated_objects: results.estimated_objects,
+      activity_data_available: results.checks?.activity_data?.event_count > 0
+    };
+
+    return await this.logActivity({
+      activityId,
+      activity: `${this.namespace}.dashboard_preflight_${results.passed ? 'passed' : 'failed'}`,
+      customer: this.getCurrentUser(),
+      featureJson,
+      link: null
+    });
+  }
+
+  // Generic event logging method (for compatibility)
+  async logEvent({ activity, customer, ts, link, feature_json, source_system, source_version, query_tag }) {
+    const activityId = this.generateActivityId('event');
+    
+    // Map old format to new format
+    return await this.logActivity({
+      activityId,
+      activity: activity || 'ccode.dashboard_event',
+      customer: customer || this.getCurrentUser(),
+      featureJson: feature_json || {},
+      link: link || null
+    });
+  }
+
+  // Core activity logging method
+  async logActivity({ activityId, activity, customer, featureJson, link = null }) {
+    // Convert featureJson to string for VARIANT column
+    const featureJsonStr = typeof featureJson === 'string' ? featureJson : JSON.stringify(featureJson);
+    
+    const sql = `
+      INSERT INTO CLAUDE_BI.ACTIVITY.EVENTS (
+        activity_id,
+        ts,
+        customer,
+        activity,
+        feature_json,
+        link,
+        _source_system,
+        _source_version,
+        _session_id
+      ) 
+      SELECT
+        '${activityId}',
+        CURRENT_TIMESTAMP(),
+        '${customer}',
+        '${activity}',
+        PARSE_JSON('${featureJsonStr.replace(/'/g, "''")}'),
+        ${link ? `'${link}'` : 'NULL'},
+        '${this.sourceSystem}',
+        '${this.sourceVersion}',
+        '${this.getSessionId()}'
+    `;
+
+    const binds = [];
+
     try {
-      const activityRecord = await this.buildActivityRecord(eventData);
-      await this.insertActivity(activityRecord);
-      return activityRecord.activity_id;
+      await new Promise((resolve, reject) => {
+        this.snowflake.execute({
+          sqlText: sql,
+          binds: binds,
+          complete: (err, stmt) => {
+            if (err) {
+              console.error(`Failed to log activity ${activity}:`, err.message);
+              reject(err);
+            } else {
+              console.log(`✅ Logged activity: ${activity} (${activityId})`);
+              resolve();
+            }
+          }
+        });
+      });
+
+      return activityId;
     } catch (error) {
-      console.error(`❌ Activity logging failed: ${error.message}`);
-      // Don't throw - activity logging should be non-blocking
+      console.error('Activity logging error:', error);
+      // Don't fail dashboard creation due to logging errors
       return null;
     }
   }
 
-  // Build complete activity record with all 14 columns
-  async buildActivityRecord(eventData) {
-    const activityId = this.generateActivityId();
-    const timestamp = new Date().toISOString();
-    
-    // Validate required fields
-    if (!eventData.activity || !eventData.customer) {
-      throw new Error('Activity and customer are required fields');
+  // Get current user from connection or environment
+  getCurrentUser() {
+    return process.env.SNOWFLAKE_USERNAME || 'dashboard_factory_user';
+  }
+
+  // Get or generate session ID
+  getSessionId() {
+    if (!this.sessionId) {
+      this.sessionId = `session_${crypto.randomBytes(8).toString('hex')}`;
     }
-    
-    // Get activity occurrence count
-    const occurrence = await this.getActivityOccurrence(
-      eventData.customer, 
-      eventData.activity
-    );
-    
-    // Build complete record with all 14 columns per Activity Schema v2.0
-    const record = {
-      // 5 Core columns (required)
-      activity_id: activityId,
-      ts: timestamp,
-      customer: eventData.customer,
-      activity: eventData.activity,
-      feature_json: JSON.stringify(eventData.feature_json || {}),
-      
-      // 3 Optional columns 
-      anonymous_customer_id: eventData.anonymous_customer_id || null,
-      revenue_impact: eventData.revenue_impact || null,
-      link: eventData.link || null,
-      
-      // 6 System extension columns (always populated)
-      _source_system: this.sourceSystem,
-      _source_version: this.sourceVersion,
-      _session_id: eventData.session_id || 'dashboard_factory',
-      _query_tag: this.generateQueryTag(eventData),
-      _activity_occurrence: occurrence.count,
-      _activity_repeated_at: occurrence.previous_ts
-    };
-    
-    return record;
+    return this.sessionId;
   }
 
-  // Generate unique activity ID
-  generateActivityId() {
-    const timestamp = Date.now();
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `act_${timestamp}_${random}`;
-  }
-
-  // Generate query tag for correlation
-  generateQueryTag(eventData) {
-    const baseTag = process.env.QUERY_TAG_PREFIX || 'ccode-dash';
-    const operation = eventData.activity.split('.')[1] || 'unknown';
-    const timestamp = Math.floor(Date.now() / 1000);
+  // Generate deterministic hash for spec (for idempotent operations)
+  generateSpecHash(spec) {
+    const specString = JSON.stringify({
+      name: spec.name,
+      panels: spec.panels.map(p => ({
+        id: p.id,
+        type: p.type,
+        source: p.source,
+        x: p.x,
+        y: p.y,
+        metric: p.metric
+      })),
+      schedule: spec.schedule
+    });
     
-    return `${baseTag}_${operation}_${timestamp}`;
+    return crypto
+      .createHash('sha256')
+      .update(specString)
+      .digest('hex')
+      .substring(0, 8);
   }
 
-  // Get activity occurrence count for customer  
-  async getActivityOccurrence(customer, activity) {
-    try {
-      const query = `
-        SELECT 
-          COUNT(*) as occurrence_count,
-          MAX(ts) as previous_ts
-        FROM ACTIVITY.EVENTS
-        WHERE customer = ? AND activity = ?
-      `;
-      
-      const result = await this.executeSQL(query, [customer, activity]);
-      const row = result.rows?.[0];
-      const count = (row?.OCCURRENCE_COUNT || 0) + 1;
-      const previousTs = row?.PREVIOUS_TS || null;
-      
-      return {
-        count: count,
-        previous_ts: previousTs
-      };
-      
-    } catch (error) {
-      console.log(`⚠️ Could not get occurrence count: ${error.message}`);
-      return { count: 1, previous_ts: null };
-    }
-  }
-
-  // Insert activity record into Snowflake
-  async insertActivity(record) {
-    const insertSQL = `
-      INSERT INTO ACTIVITY.EVENTS (
-        activity_id, ts, customer, activity, feature_json,
-        anonymous_customer_id, revenue_impact, link,
-        _source_system, _source_version, _session_id, _query_tag,
-        _activity_occurrence, _activity_repeated_at
-      ) VALUES (?, ?, ?, ?, PARSE_JSON(?), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  // Query recent dashboard activities
+  async queryRecentActivities(dashboardName = null, limit = 100) {
+    let sql = `
+      SELECT 
+        activity_id,
+        ts,
+        customer,
+        activity,
+        feature_json,
+        link
+      FROM CLAUDE_BI.ACTIVITY.EVENTS
+      WHERE activity LIKE '${this.namespace}.dashboard%'
     `;
-    
-    const binds = [
-      record.activity_id,
-      record.ts,
-      record.customer,
-      record.activity,
-      record.feature_json,
-      record.anonymous_customer_id,
-      record.revenue_impact,
-      record.link,
-      record._source_system,
-      record._source_version,
-      record._session_id,
-      record._query_tag,
-      record._activity_occurrence,
-      record._activity_repeated_at
-    ];
-    
-    await this.executeSQL(insertSQL, binds);
-    console.log(`✅ Activity logged: ${record.activity_id} (${record.activity})`);
-  }
 
-  // Dashboard-specific logging methods
+    if (dashboardName) {
+      sql += ` AND feature_json:spec_id = '${dashboardName}'`;
+    }
 
-  async logDashboardStep(step, creationId, customerID, metadata = {}) {
-    const activityName = `ccode.dashboard_${step}`;
-    
-    await this.logEvent({
-      activity: activityName,
-      customer: customerID,
-      session_id: creationId,
-      feature_json: {
-        creation_id: creationId,
-        step: step,
-        step_timestamp: new Date().toISOString(),
-        ...metadata
-      },
-      link: metadata.dashboard_url || null,
-      revenue_impact: metadata.estimated_cost || null
-    });
-  }
+    sql += ` ORDER BY ts DESC LIMIT ${limit}`;
 
-  async logDashboardCreated(dashboardDetails, customerID, sessionID) {
-    await this.logEvent({
-      activity: 'ccode.dashboard_created',
-      customer: customerID,
-      session_id: sessionID,
-      link: dashboardDetails.url,
-      feature_json: {
-        dashboard_name: dashboardDetails.name,
-        spec_id: dashboardDetails.specId,
-        panels_count: dashboardDetails.panelsCount,
-        creation_time_ms: dashboardDetails.creationTimeMs,
-        objects_created: dashboardDetails.objectsCreated,
-        refresh_schedule: dashboardDetails.refreshSchedule,
-        deployment_type: 'streamlit_snowflake'
-      }
-    });
-  }
-
-  async logIntentAnalysis(analysisResult, customerID, sessionID) {
-    const activityName = analysisResult.isDashboardRequest 
-      ? 'ccode.dashboard_intent' 
-      : 'ccode.intent_rejected';
-    
-    await this.logEvent({
-      activity: activityName,
-      customer: customerID,
-      session_id: sessionID,
-      feature_json: {
-        confidence_percent: analysisResult.confidence,
-        dashboard_intent: analysisResult.isDashboardRequest,
-        detected_metrics: analysisResult.requirements?.metrics || [],
-        detected_panels: analysisResult.requirements?.panels?.length || 0,
-        conversation_length: analysisResult.analysis?.user_messages_analyzed || 0,
-        key_phrases: analysisResult.analysis?.key_phrases || [],
-        analysis_reason: analysisResult.reason
-      }
-    });
-  }
-
-  async logSpecOperation(operation, specData, customerID, sessionID) {
-    const activityName = `ccode.dashboard_spec_${operation}`;
-    
-    await this.logEvent({
-      activity: activityName,
-      customer: customerID,
-      session_id: sessionID,
-      feature_json: {
-        spec_name: specData.name,
-        spec_hash: specData.hash,
-        panels_count: specData.panels?.length || 0,
-        schedule_mode: specData.schedule?.mode,
-        validation_errors: specData.validationErrors || [],
-        generation_time_ms: specData.generationTime || null
-      }
-    });
-  }
-
-  // Execute SQL with Snowflake connection
-  async executeSQL(sqlText, binds = []) {
-    // Context is set once at connection time, just execute the query
     return new Promise((resolve, reject) => {
       this.snowflake.execute({
-        sqlText: sqlText,
-        binds: binds,
-        complete: (err, stmt) => {
+        sqlText: sql,
+        complete: (err, stmt, rows) => {
           if (err) {
             reject(err);
           } else {
-            resolve({
-              rows: stmt.getResultSet(),
-              rowCount: stmt.getNumRows()
-            });
+            resolve(rows);
           }
         }
       });
     });
   }
 
-  // Analytics methods
-  async getDashboardAnalytics(customerID, timeRange = '7 days') {
-    const query = `
+  // Get dashboard metrics from Activity stream
+  async getDashboardMetrics(timeWindow = '24 hours') {
+    const sql = `
       SELECT 
-        activity,
-        COUNT(*) as activity_count,
-        COUNT(DISTINCT customer) as unique_customers,
-        AVG(_activity_occurrence) as avg_occurrence,
-        MIN(ts) as first_activity,
-        MAX(ts) as latest_activity
-      FROM EVENTS
-      WHERE customer = ?
-        AND activity LIKE 'ccode.dashboard_%'
-        AND ts >= CURRENT_TIMESTAMP - INTERVAL '${timeRange}'
-      GROUP BY activity
-      ORDER BY activity_count DESC
+        COUNT(DISTINCT feature_json:spec_id) as unique_dashboards,
+        COUNT(CASE WHEN activity = '${this.namespace}.dashboard_created' THEN 1 END) as created_count,
+        COUNT(CASE WHEN activity = '${this.namespace}.dashboard_refreshed' THEN 1 END) as refresh_count,
+        COUNT(CASE WHEN activity = '${this.namespace}.dashboard_destroyed' THEN 1 END) as destroy_count,
+        COUNT(CASE WHEN activity = '${this.namespace}.dashboard_failed' THEN 1 END) as failure_count,
+        AVG(feature_json:creation_time_ms) as avg_creation_time_ms,
+        SUM(feature_json:objects_created) as total_objects_created
+      FROM CLAUDE_BI.ACTIVITY.EVENTS
+      WHERE activity LIKE '${this.namespace}.dashboard%'
+        AND ts >= DATEADD('hour', -${timeWindow.replace(/\D/g, '')}, CURRENT_TIMESTAMP())
     `;
-    
-    const result = await this.executeSQL(query, [customerID]);
-    return result.rows || [];
-  }
 
-  async getDashboardCreationFunnel(timeRange = '30 days') {
-    const query = `
-      WITH funnel_steps AS (
-        SELECT 
-          customer,
-          feature_json:creation_id::STRING as creation_id,
-          activity,
-          ts,
-          ROW_NUMBER() OVER (PARTITION BY customer, feature_json:creation_id ORDER BY ts) as step_order
-        FROM ACTIVITY.EVENTS
-        WHERE activity LIKE 'ccode.dashboard_%'
-          AND ts >= CURRENT_TIMESTAMP - INTERVAL '${timeRange}'
-      )
-      SELECT 
-        activity,
-        COUNT(*) as attempts,
-        COUNT(DISTINCT customer) as unique_customers,
-        AVG(step_order) as avg_step_position
-      FROM funnel_steps
-      GROUP BY activity
-      ORDER BY avg_step_position
-    `;
-    
-    const result = await this.executeSQL(query);
-    return result.rows || [];
-  }
-
-  // Get logger version and capabilities
-  getVersion() {
-    return {
-      version: this.version,
-      schema_version: '2.0.0',
-      capabilities: {
-        total_columns: 14,
-        supported_activities: Object.keys(this.activityTypes).length,
-        features: [
-          'strict_schema_compliance',
-          'activity_occurrence_tracking', 
-          'query_correlation',
-          'dashboard_funnel_analysis',
-          'non_blocking_logging'
-        ]
-      }
-    };
+    return new Promise((resolve, reject) => {
+      this.snowflake.execute({
+        sqlText: sql,
+        complete: (err, stmt, rows) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(rows[0]);
+          }
+        }
+      });
+    });
   }
 }
 
-module.exports = ActivityLoggerWrapper;
+module.exports = DashboardActivityLogger;

@@ -24,5 +24,15 @@ module.exports = {
     ARTIFACTS: () => config.getTableRef('ACTIVITY_CCODE', 'ARTIFACTS'),
     AUDIT_RESULTS: () => config.getTableRef('ACTIVITY_CCODE', 'AUDIT_RESULTS'),
     SCHEMA_VERSION: () => config.getTableRef('ANALYTICS', 'SCHEMA_VERSION')
+  },
+  
+  // Quick access to Activity views (v1 Dashboard Factory)
+  views: {
+    ACTIVITY_COUNTS_24H: () => config.getTableRef('ACTIVITY_CCODE', 'VW_ACTIVITY_COUNTS_24H'),
+    LLM_TELEMETRY: () => config.getTableRef('ACTIVITY_CCODE', 'VW_LLM_TELEMETRY'),
+    SQL_EXECUTIONS: () => config.getTableRef('ACTIVITY_CCODE', 'VW_SQL_EXECUTIONS'),
+    DASHBOARD_OPERATIONS: () => config.getTableRef('ACTIVITY_CCODE', 'VW_DASHBOARD_OPERATIONS'),
+    SAFESQL_TEMPLATES: () => config.getTableRef('ACTIVITY_CCODE', 'VW_SAFESQL_TEMPLATES'),
+    ACTIVITY_SUMMARY: () => config.getTableRef('ACTIVITY_CCODE', 'VW_ACTIVITY_SUMMARY')
   }
 };
