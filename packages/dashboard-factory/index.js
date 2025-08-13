@@ -11,6 +11,7 @@ const ActivityLoggerWrapper = require('./activity-logger-wrapper');
 class DashboardFactory {
   constructor(snowflakeConnection, options = {}) {
     this.snowflake = snowflakeConnection;
+    this.cfg = require('../snowflake-schema/config');
     this.options = {
       timeout: options.timeout || 300000, // 5 minute timeout
       dryRun: options.dryRun || false,
@@ -23,6 +24,9 @@ class DashboardFactory {
     this.objectManager = new SnowflakeObjectManager(snowflakeConnection);
     this.streamlitGenerator = new StreamlitGenerator();
     this.activityLogger = new ActivityLoggerWrapper(snowflakeConnection);
+    
+    // Session state
+    this.sessionInitialized = false;
     
     // Track creation progress
     this.creationSteps = [
@@ -38,12 +42,36 @@ class DashboardFactory {
     ];
   }
 
+  // Initialize session context - set warehouse, database, schema, query tag
+  async initSession() {
+    if (this.sessionInitialized) return;
+    
+    try {
+      const contextSQL = [
+        this.cfg.getWarehouse() && `USE WAREHOUSE ${this.cfg.getWarehouse()}`,
+        `USE DATABASE ${this.cfg.getDatabase()}`,
+        `USE SCHEMA ${this.cfg.getDefaultSchema()}`,
+        `ALTER SESSION SET QUERY_TAG = '${this.cfg.getQueryTag({ service: 'dashboard-factory' })}'`
+      ].filter(Boolean).join(';\n');
+      
+      await this.objectManager.exec(contextSQL, {}, 'Set session context');
+      this.sessionInitialized = true;
+      console.log('✅ Session context initialized');
+    } catch (error) {
+      console.error('⚠️ Session context initialization failed:', error.message);
+      // Continue anyway - may work with defaults
+    }
+  }
+
   // Main orchestration method: Conversation → Dashboard URL
   async createDashboard(conversationHistory, customerID, sessionID) {
     const startTime = Date.now();
     const creationID = `dash_${Date.now()}_${sessionID}`;
     
     console.log(`🏭 Dashboard Factory: Starting creation ${creationID}`);
+    
+    // Ensure session is initialized
+    await this.initSession();
     
     try {
       // Step 1: Analyze conversation for dashboard intent

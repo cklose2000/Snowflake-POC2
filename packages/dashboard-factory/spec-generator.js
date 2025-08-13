@@ -240,42 +240,40 @@ class SpecGenerator {
     return [...new Set(keywords)];
   }
 
-  // Generate schedule configuration (Tasks only for v1, no Dynamic Tables)
+  // Generate schedule configuration - ALWAYS returns valid schema
   generateSchedule(scheduleReq) {
-    // Always return a valid schedule (schema requires mode to be exact or freshness)
-    // Default to exact mode with daily schedule
-    if (!scheduleReq || !scheduleReq.enabled) {
-      return {
-        mode: 'exact',
-        cron_utc: '0 12 * * *'  // Daily at noon UTC (8am ET)
-      };
-    }
+    // ALWAYS return a valid schedule per frozen schema v1
+    // Schema requires mode to be 'exact' or 'freshness', never 'manual'
     
-    // Use Tasks for exact times (schedule stored in UTC)
-    const schedule = {
+    // Default schedule - valid even when disabled
+    const defaultSchedule = {
       mode: 'exact',
-      enabled: true
+      cron_utc: '0 12 * * *'  // Daily at noon UTC (8am ET) - nominal schedule
     };
     
-    // Convert local time to UTC cron
+    // If no schedule requested or explicitly disabled, return default
+    if (!scheduleReq || !scheduleReq.enabled) {
+      return defaultSchedule;
+    }
+    
+    // Build exact schedule (Tasks only for v1)
+    const schedule = {
+      mode: 'exact',  // Always 'exact' for v1, never 'manual'
+      cron_utc: defaultSchedule.cron_utc  // Start with default
+    };
+    
+    // Override with specific schedule if provided
     if (scheduleReq.exact_time) {
       schedule.cron_utc = this.convertToCronUTC(
         scheduleReq.exact_time,
         scheduleReq.timezone || 'America/New_York'
       );
-      schedule.display_time = scheduleReq.exact_time; // Show local time in UI
-    } else if (scheduleReq.frequency === 'daily') {
-      // Default to 8am ET (12pm UTC)
-      schedule.cron_utc = '0 12 * * *';
-      schedule.display_time = '8:00 AM ET';
     } else if (scheduleReq.frequency === 'hourly') {
       schedule.cron_utc = '0 * * * *';
-      schedule.display_time = 'Every hour';
-    } else {
-      // Default to daily
-      schedule.cron_utc = '0 12 * * *';
-      schedule.display_time = '8:00 AM ET';
+    } else if (scheduleReq.frequency === 'daily') {
+      schedule.cron_utc = '0 12 * * *';  // noon UTC
     }
+    // Note: display_time is NOT part of schema - remove it
     
     return schedule;
   }

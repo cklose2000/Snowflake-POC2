@@ -339,12 +339,24 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'chat-ui.html'));
 });
 
-app.get('/health', async (req, res) => {
-  // Enhanced health check with Dashboard Factory
+// Enhanced health endpoint for debugging
+app.get('/__health', async (req, res) => {
   const healthStatus = {
     status: 'healthy',
+    pid: process.pid,
+    startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+    uptime: process.uptime(),
+    gitSha: process.env.GIT_SHA || process.env.GIT_COMMIT || 'dev',
+    nodeEnv: process.env.NODE_ENV || 'development',
+    config: {
+      database: schemaConfig.getDatabase(),
+      warehouse: schemaConfig.getWarehouse(),
+      role: schemaConfig.getRole(),
+      defaultSchema: schemaConfig.getDefaultSchema(),
+      schemas: Object.keys(schemaConfig.schemas)
+    },
     snowflake: snowflakeConn ? 'connected' : 'disconnected',
-    websocket: wss.clients.size,
+    websocket: wss ? wss.clients.size : 0,
     dashboard_factory: dashboardFactory ? 'initialized' : 'unavailable',
     timestamp: new Date()
   };
@@ -396,6 +408,16 @@ app.get('/health', async (req, res) => {
 
   const statusCode = healthStatus.status === 'healthy' ? 200 : 503;
   res.status(statusCode).json(healthStatus);
+});
+
+// Legacy health endpoint (keep for compatibility)
+app.get('/health', async (req, res) => {
+  res.json({
+    status: 'healthy',
+    snowflake: snowflakeConn ? 'connected' : 'disconnected',
+    websocket: wss ? wss.clients.size : 0,
+    dashboard_factory: dashboardFactory ? 'initialized' : 'unavailable'
+  });
 });
 
 // Routing statistics endpoint

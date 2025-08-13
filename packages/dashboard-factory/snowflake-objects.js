@@ -2,10 +2,12 @@
 // Implements binary scheduling: Tasks vs Dynamic Tables based on spec.schedule.mode
 
 const { generateObjectNames } = require('./schema');
+const cfg = require('../snowflake-schema/config');
 
 class SnowflakeObjectManager {
   constructor(snowflakeConnection) {
     this.snowflake = snowflakeConnection;
+    this.cfg = cfg;  // Schema configuration for FQN resolution
     this.version = '1.0.0';
     
     // Track created objects for cleanup
@@ -39,6 +41,7 @@ class SnowflakeObjectManager {
       results.objectsCreated += infraResult.count;
 
       // Create base views for each panel
+      let allScheduled = true;
       for (const panel of spec.panels) {
         const panelResult = await this.createPanelObjects(spec, panel);
         
@@ -46,7 +49,15 @@ class SnowflakeObjectManager {
         results.tasks.push(...panelResult.tasks);
         results.dynamicTables.push(...panelResult.dynamicTables);
         results.objectsCreated += panelResult.count;
+        
+        // Track if any panel failed to schedule
+        if (panelResult.scheduled === false) {
+          allScheduled = false;
+        }
       }
+      
+      // Pass scheduling status up
+      results.scheduled = allScheduled;
 
       console.log(`✅ Created ${results.objectsCreated} objects in ${Date.now() - startTime}ms`);
       return results;
@@ -86,20 +97,44 @@ class SnowflakeObjectManager {
       results.count++;
     }
 
-    // Step 3: Create scheduling object based on mode
+    // Step 3: Create scheduling object based on mode (graceful degradation)
+    let scheduled = false;
     if (spec.schedule.mode === 'exact') {
-      // Use Tasks for exact scheduling
-      const taskSQL = this.generateTaskSQL(spec, panel, objectNames);
-      await this.executeSQL(taskSQL, `CREATE TASK ${objectNames.task}`);
-      results.tasks.push(objectNames.task);
-      results.count++;
+      // Try to create Task - continue without if no privileges
+      try {
+        const taskSQL = this.generateTaskSQL(spec, panel, objectNames);
+        await this.executeSQL(taskSQL, `CREATE TASK ${objectNames.task}`);
+        results.tasks.push(objectNames.task);
+        results.count++;
+        scheduled = true;
+      } catch (error) {
+        if (/insufficient privileges|not authorized/i.test(error.message)) {
+          console.log(`⚠️ Task creation skipped (no privileges): ${objectNames.task}`);
+          results.scheduled = false;  // Track that scheduling failed
+        } else {
+          throw error;  // Re-throw non-privilege errors
+        }
+      }
     } else if (spec.schedule.mode === 'freshness') {
-      // Use Dynamic Tables for freshness-based scheduling
-      const dynamicTableSQL = this.generateDynamicTableSQL(spec, panel, objectNames);
-      await this.executeSQL(dynamicTableSQL, `CREATE DYNAMIC TABLE ${objectNames.dynamic_table}`);
-      results.dynamicTables.push(objectNames.dynamic_table);
-      results.count++;
+      // Try Dynamic Tables - also graceful degradation
+      try {
+        const dynamicTableSQL = this.generateDynamicTableSQL(spec, panel, objectNames);
+        await this.executeSQL(dynamicTableSQL, `CREATE DYNAMIC TABLE ${objectNames.dynamic_table}`);
+        results.dynamicTables.push(objectNames.dynamic_table);
+        results.count++;
+        scheduled = true;
+      } catch (error) {
+        if (/insufficient privileges|not authorized/i.test(error.message)) {
+          console.log(`⚠️ Dynamic table creation skipped (no privileges): ${objectNames.dynamic_table}`);
+          results.scheduled = false;
+        } else {
+          throw error;
+        }
+      }
     }
+    
+    // Store scheduling status
+    results.scheduled = scheduled;
 
     return results;
   }
@@ -111,13 +146,8 @@ class SnowflakeObjectManager {
     // Activity views already have fixed windows, no additional filtering needed
     // v1: All views are pre-filtered with appropriate time windows
     
-    // Qualify source with correct schema (Activity views are in ACTIVITY_CCODE)
-    let qualifiedSource = source;
-    if (source.startsWith('VW_')) {
-      qualifiedSource = `CLAUDE_BI.ACTIVITY_CCODE.${source}`;
-    } else if (!source.includes('.')) {
-      qualifiedSource = `CLAUDE_BI.ANALYTICS.${source}`;
-    }
+    // Use config module to qualify source with correct schema
+    const qualifiedSource = this.cfg.qualifySource(source);
     
     // Different SQL generation based on panel type
     if (type === 'chart' || type === 'table') {
@@ -345,43 +375,46 @@ class SnowflakeObjectManager {
         console.log(`❌ Activity data check failed: ${error.message}`);
       }
 
-      // Check 1: Privileges (CREATE VIEW, TASK, STREAMLIT)
-      console.log('🔧 Checking privileges...');
+      // Check 1: Warehouse context (CRITICAL - must have warehouse)
+      console.log('🔧 Checking warehouse context...');
       try {
-        const privilegeChecks = [
-          `SHOW GRANTS TO ROLE ${results.checks.permissions?.CURRENT_ROLE || 'CURRENT_ROLE'}`,
-          'SELECT CURRENT_ROLE(), CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_WAREHOUSE()'
-        ];
+        const contextResult = await this.executeSQL(
+          'SELECT CURRENT_ROLE(), CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_WAREHOUSE()',
+          'CHECK CONTEXT'
+        );
+        results.checks.context = contextResult.resultSet[0];
         
-        const permissionResult = await this.executeSQL(privilegeChecks[1], 'CHECK PERMISSIONS');
-        results.checks.permissions = permissionResult.resultSet[0];
-        console.log(`✅ Current context: ${results.checks.permissions.CURRENT_ROLE}`);
-        
-        // Test CREATE VIEW privilege
-        try {
-          const testViewSQL = 'CREATE OR REPLACE VIEW test_dashboard_privilege_check AS SELECT 1 as test';
-          await this.executeSQL(testViewSQL, 'TEST CREATE VIEW');
-          await this.executeSQL('DROP VIEW IF EXISTS test_dashboard_privilege_check', 'CLEANUP TEST VIEW');
-          console.log(`✅ CREATE VIEW privilege confirmed`);
-        } catch (error) {
-          results.issues.push('insufficient_view_privileges');
-          results.passed = false;
-          console.log(`❌ CREATE VIEW privilege missing: ${error.message}`);
+        // Verify warehouse is set
+        if (!results.checks.context.CURRENT_WAREHOUSE) {
+          // Try to set from environment
+          const envWarehouse = process.env.SNOWFLAKE_WAREHOUSE || this.cfg.getWarehouse();
+          if (envWarehouse) {
+            console.log(`⚠️ No warehouse set, using ${envWarehouse}`);
+            try {
+              await this.executeSQL(`USE WAREHOUSE ${envWarehouse}`, 'SET WAREHOUSE');
+              results.checks.warehouse_set = envWarehouse;
+              console.log(`✅ Warehouse set: ${envWarehouse}`);
+            } catch (e) {
+              results.issues.push('cannot_set_warehouse');
+              console.log(`❌ Cannot set warehouse: ${e.message}`);
+            }
+          } else {
+            results.issues.push('no_warehouse_available');
+            results.passed = false;
+            console.log(`❌ No warehouse available - operations will fail`);
+          }
+        } else {
+          console.log(`✅ Warehouse active: ${results.checks.context.CURRENT_WAREHOUSE}`);
         }
         
-        // Test warehouse usability
-        const warehouseName = results.checks.permissions.CURRENT_WAREHOUSE;
-        if (!warehouseName) {
-          results.issues.push('no_warehouse_context');
-          results.passed = false;
-          console.log(`❌ No warehouse in current context`);
-        } else {
-          console.log(`✅ Warehouse context: ${warehouseName}`);
+        // Verify database/schema context
+        if (!results.checks.context.CURRENT_DATABASE) {
+          console.log(`⚠️ No database set, using ${this.cfg.getDatabase()}`);
+          await this.executeSQL(`USE DATABASE ${this.cfg.getDatabase()}`, 'SET DATABASE');
         }
       } catch (error) {
-        results.issues.push('permission_check_failed');
-        results.passed = false;
-        console.log(`❌ Permission check failed: ${error.message}`);
+        results.issues.push('context_check_failed');
+        console.log(`❌ Context check failed: ${error.message}`);
       }
 
       // Check 2: Dynamic Tables prerequisites (if DT mode)
@@ -636,23 +669,41 @@ class SnowflakeObjectManager {
     return filterClause;
   }
 
-  // Execute SQL with error handling and logging
-  async executeSQL(sql, description = 'SQL') {
-    console.log(`🔧 ${description}...`);
+  // Unified execute wrapper with binds support and query_id capture
+  async exec(sqlText, binds = {}, label = 'SQL') {
+    console.log(`🔧 ${label}...`);
     return new Promise((resolve, reject) => {
       this.snowflake.execute({
-        sqlText: sql,
+        sqlText,
+        binds,  // Supports both named and positional binds
         complete: (err, stmt, rows) => {
           if (err) {
-            console.error(`❌ ${description} failed: ${err.message}`);
+            console.error(`❌ ${label} failed: ${err.message}`);
             reject(err);
           } else {
-            // Return in the format other methods expect
-            resolve({ resultSet: rows || [] });
+            // Capture query_id for telemetry
+            let queryId = null;
+            if (stmt && stmt.getQueryId) {
+              queryId = stmt.getQueryId();
+            }
+            
+            // Return standardized result
+            resolve({ 
+              rows: rows || [], 
+              stmt,
+              queryId,
+              // Backward compatibility
+              resultSet: rows || []
+            });
           }
         }
       });
     });
+  }
+
+  // Legacy wrapper for backward compatibility
+  async executeSQL(sql, description = 'SQL') {
+    return this.exec(sql, {}, description);
   }
 
   // Get manager version and capabilities

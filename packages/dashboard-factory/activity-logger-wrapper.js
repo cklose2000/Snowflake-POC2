@@ -166,11 +166,14 @@ class DashboardActivityLogger {
     });
   }
 
-  // Core activity logging method
+  // Core activity logging method - SAFE with parameter binds
   async logActivity({ activityId, activity, customer, featureJson, link = null }) {
     // Convert featureJson to string for VARIANT column
-    const featureJsonStr = typeof featureJson === 'string' ? featureJson : JSON.stringify(featureJson);
+    const featureJsonStr = typeof featureJson === 'string' 
+      ? featureJson 
+      : JSON.stringify(featureJson || {});
     
+    // Use parameter binds to prevent SQL injection
     const sql = `
       INSERT INTO CLAUDE_BI.ACTIVITY.EVENTS (
         activity_id,
@@ -181,24 +184,35 @@ class DashboardActivityLogger {
         link,
         _source_system,
         _source_version,
-        _session_id
+        _session_id,
+        _query_tag
       ) 
       SELECT
-        '${activityId}',
+        :activity_id,
         CURRENT_TIMESTAMP(),
-        '${customer}',
-        '${activity}',
-        PARSE_JSON('${featureJsonStr.replace(/'/g, "''")}'),
-        ${link ? `'${link}'` : 'NULL'},
-        '${this.sourceSystem}',
-        '${this.sourceVersion}',
-        '${this.getSessionId()}'
+        :customer,
+        :activity,
+        PARSE_JSON(:feature_json),
+        :link,
+        :source_system,
+        :source_version,
+        :session_id,
+        CURRENT_QUERY_TAG()
     `;
 
-    const binds = [];
+    const binds = {
+      activity_id: activityId,
+      customer: customer,
+      activity: activity,
+      feature_json: featureJsonStr,
+      link: link,
+      source_system: this.sourceSystem,
+      source_version: this.sourceVersion,
+      session_id: this.getSessionId()
+    };
 
     try {
-      await new Promise((resolve, reject) => {
+      const result = await new Promise((resolve, reject) => {
         this.snowflake.execute({
           sqlText: sql,
           binds: binds,
@@ -208,11 +222,21 @@ class DashboardActivityLogger {
               reject(err);
             } else {
               console.log(`✅ Logged activity: ${activity} (${activityId})`);
-              resolve();
+              // Return statement for query_id capture
+              resolve(stmt);
             }
           }
         });
       });
+
+      // Capture query_id if available
+      if (result && result.getQueryId) {
+        const queryId = result.getQueryId();
+        if (queryId && activity === 'ccode.sql_executed') {
+          // Store query_id for later correlation
+          this.lastQueryId = queryId;
+        }
+      }
 
       return activityId;
     } catch (error) {

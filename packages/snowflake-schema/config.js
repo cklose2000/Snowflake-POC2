@@ -262,6 +262,34 @@ class SnowflakeSchemaConfig {
       }))
     };
   }
+
+  // Simple FQN helper for common use
+  fqn(schema, object) {
+    return `${this.database}.${schema}.${object}`;
+  }
+
+  // Qualify a source table/view name with proper schema
+  qualifySource(source) {
+    // Already qualified?
+    if (source.includes('.')) return source;
+    
+    // Known Activity views map to ACTIVITY_CCODE schema
+    const activityViews = new Set([
+      'VW_ACTIVITY_COUNTS_24H',
+      'VW_LLM_TELEMETRY',
+      'VW_SQL_EXECUTIONS',
+      'VW_DASHBOARD_OPERATIONS',
+      'VW_SAFESQL_TEMPLATES',
+      'VW_ACTIVITY_SUMMARY'
+    ]);
+    
+    if (activityViews.has(source)) {
+      return this.fqn('ACTIVITY_CCODE', source);
+    }
+    
+    // Default to ANALYTICS schema
+    return this.fqn(this.defaultSchema, source);
+  }
 }
 
 // Export singleton instance

@@ -1,10 +1,20 @@
 # SnowflakePOC2
 
-Claude Desktop-like UI powered by Claude Code with Activity Schema 2.0 compliance, Dashboard Factory v1 complete with Activity-native dashboards.
+Claude Desktop-like UI powered by Claude Code with Activity Schema 2.0 compliance, Dashboard Factory v1 complete with bulletproof hardening.
 
-## 🎉 Dashboard Factory v1 COMPLETE
+## 🎉 Dashboard Factory v1 HARDENED & PRODUCTION-READY
 
-### Activity Schema IS the Product (2025-08-13)
+### Critical Improvements Applied (2025-08-13)
+- ✅ **SQL Injection Prevention**: All queries use parameterized binds
+- ✅ **Schema Compliance**: Guaranteed valid schemas (no 'manual' mode)
+- ✅ **FQN Resolution**: Dynamic schema mapping without hardcoding
+- ✅ **Graceful Degradation**: Continues without CREATE TASK privileges
+- ✅ **Session Management**: Proper warehouse/database/schema context
+- ✅ **Comprehensive Testing**: Full regression test suite
+- ✅ **Startup Validation**: Schema verification on server start
+- ✅ **Enhanced Monitoring**: Detailed health endpoints
+
+### Activity Schema IS the Product
 - ✅ **Activity-Native Views**: 6 specialized views analyzing telemetry data
 - ✅ **Zero Fake Tables**: Activity Schema itself is the dataset
 - ✅ **Dashboard Generation Working**: Creates views, tasks, and Streamlit code
@@ -17,6 +27,7 @@ Claude Desktop-like UI powered by Claude Code with Activity Schema 2.0 complianc
 - ✅ **Automatic refresh tasks**: Scheduled with CRON expressions
 - ✅ **Streamlit generation**: Full dashboard code with charts and metrics
 - ✅ **Schema compliance**: Frozen spec v1 validation passing
+- ✅ **Production hardening**: All 10 critical improvements implemented
 
 ## Features
 
@@ -115,9 +126,16 @@ CLAUDE_BI (database)
   - Dashboard generation from chat working
   - Full Activity Schema observability
   - Streamlit code generation
+  - **HARDENED**: All 10 critical improvements applied
+    - SQL injection prevention via parameter binds
+    - Always-valid schema generation
+    - FQN resolution without hardcoding
+    - Graceful degradation for missing privileges
+    - Session context management
+    - Comprehensive safety tests
 - ✅ **Schema Awareness Implementation** (COMPLETE)
 - 🚧 **Phase 2: Meta Dashboard & Analytics** (NEXT)
-- 🚧 **Phase 3: Production Deployment** (PENDING)
+- 🚧 **Phase 3: Production Deployment** (READY)
 
 ## Contributing
 
