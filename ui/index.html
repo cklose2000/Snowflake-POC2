@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snowflake POC2 - Dashboard Factory</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            color: #333;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .container {
+            flex: 1;
+            display: flex;
+            padding: 2rem;
+            gap: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .chat-panel {
+            flex: 1;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .messages {
+            flex: 1;
+            padding: 1.5rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .message {
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+
+        .message.user {
+            background: #667eea;
+            color: white;
+            align-self: flex-end;
+        }
+
+        .message.assistant {
+            background: #f3f4f6;
+            color: #333;
+            align-self: flex-start;
+        }
+
+        .message.system {
+            background: #fef3c7;
+            color: #92400e;
+            align-self: center;
+            text-align: center;
+            max-width: 90%;
+        }
+
+        .input-area {
+            padding: 1.5rem;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        #messageInput {
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #messageInput:focus {
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 0.75rem 1.5rem;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #5a67d8;
+        }
+
+        button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .actions {
+            margin-top: 1rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .actions button {
+            flex: 1;
+            padding: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: #e5e7eb;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 1rem;
+            display: none;
+        }
+
+        .progress-bar.active {
+            display: block;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #667eea;
+            animation: progress 2s ease-in-out infinite;
+        }
+
+        @keyframes progress {
+            0% { width: 0%; }
+            50% { width: 70%; }
+            100% { width: 100%; }
+        }
+
+        .result-panel {
+            background: white;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+            border: 1px solid #e5e7eb;
+        }
+
+        .result-panel h3 {
+            margin-bottom: 0.5rem;
+            color: #333;
+        }
+
+        .result-panel pre {
+            background: #f9fafb;
+            padding: 0.5rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🏗️ Snowflake POC2 - Dashboard Factory</h1>
+        <div class="status">
+            <span class="status-dot"></span>
+            <span id="status">Connected</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="chat-panel">
+            <div class="messages" id="messages">
+                <div class="message system">
+                    Welcome to Dashboard Factory! Ask me to create an activity dashboard.
+                </div>
+            </div>
+            
+            <div class="input-area">
+                <div class="input-group">
+                    <input 
+                        type="text" 
+                        id="messageInput" 
+                        placeholder="Ask for a dashboard... (e.g., 'Show me an activity dashboard')"
+                        autofocus
+                    >
+                    <button id="sendBtn">Send</button>
+                </div>
+                
+                <div class="actions">
+                    <button id="dashboardBtn">Create Dashboard</button>
+                    <button id="queryBtn">Run Query</button>
+                    <button id="clearBtn">Clear</button>
+                </div>
+                
+                <div class="progress-bar" id="progressBar">
+                    <div class="progress-fill"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // WebSocket connection
+        let ws = null;
+        const messages = [];
+        
+        // Connect to WebSocket
+        function connect() {
+            ws = new WebSocket('ws://localhost:8080');
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                updateStatus('Connected');
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleMessage(data);
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateStatus('Error');
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                updateStatus('Disconnected');
+                // Reconnect after 3 seconds
+                setTimeout(connect, 3000);
+            };
+        }
+        
+        // Handle incoming messages
+        function handleMessage(data) {
+            switch(data.type) {
+                case 'response':
+                    addMessage(data.message, 'assistant');
+                    break;
+                    
+                case 'progress':
+                    showProgress(data.status);
+                    break;
+                    
+                case 'dashboard_complete':
+                    hideProgress();
+                    showResult('Dashboard Created', data.result);
+                    break;
+                    
+                case 'query_result':
+                    hideProgress();
+                    showResult('Query Result', data.result);
+                    break;
+                    
+                case 'error':
+                case 'dashboard_error':
+                case 'query_error':
+                    hideProgress();
+                    addMessage(`Error: ${data.error || data.message}`, 'system');
+                    break;
+            }
+        }
+        
+        // Send message
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            addMessage(message, 'user');
+            messages.push({ role: 'user', content: message });
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'chat',
+                    message: message
+                }));
+            }
+            
+            input.value = '';
+        }
+        
+        // Create dashboard
+        function createDashboard() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                addMessage('Not connected to server', 'system');
+                return;
+            }
+            
+            showProgress('Creating dashboard...');
+            
+            ws.send(JSON.stringify({
+                type: 'dashboard',
+                conversation: messages
+            }));
+        }
+        
+        // Run query
+        function runQuery() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                addMessage('Not connected to server', 'system');
+                return;
+            }
+            
+            showProgress('Running query...');
+            
+            ws.send(JSON.stringify({
+                type: 'query',
+                template: 'sample_top',
+                parameters: { limit: 10 }
+            }));
+        }
+        
+        // UI helpers
+        function addMessage(text, type) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = text;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        function updateStatus(status) {
+            document.getElementById('status').textContent = status;
+            const dot = document.querySelector('.status-dot');
+            dot.style.background = status === 'Connected' ? '#10b981' : '#ef4444';
+        }
+        
+        function showProgress(status) {
+            const progressBar = document.getElementById('progressBar');
+            progressBar.classList.add('active');
+            if (status) {
+                addMessage(status, 'system');
+            }
+        }
+        
+        function hideProgress() {
+            const progressBar = document.getElementById('progressBar');
+            progressBar.classList.remove('active');
+        }
+        
+        function showResult(title, result) {
+            const messagesDiv = document.getElementById('messages');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'result-panel';
+            resultDiv.innerHTML = `
+                <h3>${title}</h3>
+                <pre>${JSON.stringify(result, null, 2)}</pre>
+            `;
+            messagesDiv.appendChild(resultDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        function clearMessages() {
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = `
+                <div class="message system">
+                    Welcome to Dashboard Factory! Ask me to create an activity dashboard.
+                </div>
+            `;
+            messages.length = 0;
+        }
+        
+        // Event listeners
+        document.getElementById('sendBtn').addEventListener('click', sendMessage);
+        document.getElementById('dashboardBtn').addEventListener('click', createDashboard);
+        document.getElementById('queryBtn').addEventListener('click', runQuery);
+        document.getElementById('clearBtn').addEventListener('click', clearMessages);
+        
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+        
+        // Connect on load
+        connect();
+        
+        // Alternative: Use HTTP API if WebSocket fails
+        async function createDashboardHTTP() {
+            try {
+                const response = await fetch('/api/dashboard', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ conversation: messages })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showResult('Dashboard Created', result);
+                } else {
+                    addMessage(`Error: ${result.error}`, 'system');
+                }
+            } catch (error) {
+                addMessage(`Error: ${error.message}`, 'system');
+            }
+        }
+    </script>
+</body>
+</html>

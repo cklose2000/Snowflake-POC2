@@ -1,42 +1,23 @@
 {
-  "name": "snowflakepoc2",
-  "version": "1.0.0",
-  "description": "Claude Desktop-like UI powered by Claude Code with Activity Schema 2.0",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "name": "snowflake-poc2-core",
+  "version": "2.0.0",
+  "description": "Streamlined Dashboard Factory for Snowflake with Activity Schema v2.0",
+  "main": "src/server.js",
   "scripts": {
-    "setup": "npm install && npm run setup:env && npm run setup:db",
-    "setup:env": "cp .env.example .env && echo 'Please edit .env with your credentials'",
-    "setup:db": "snowsql -f infra/snowflake/setup.sql",
-    "dev": "concurrently \"npm run dev:bridge\" \"npm run dev:ui\"",
-    "dev:bridge": "cd apps/ccode-bridge && npm run dev",
-    "dev:ui": "cd apps/ui-shell && npm run dev",
-    "test": "npm run test --workspaces",
-    "validate:victory": "node scripts/victory-audit.js",
-    "agents:snowflake": "cd packages/agents/snowflake-agent && ccode --config ccode.toml",
-    "agents:audit": "cd packages/agents/audit-agent && ccode --config ccode.toml",
-    "validate-schema": "node scripts/validate-schema.js",
-    "bootstrap-schema": "node scripts/run-bootstrap.js",
-    "bootstrap-activity-views": "node scripts/run-activity-views.js",
-    "lint:schemas": "eslint . --rule 'no-hardcoded-schemas: error'",
-    "codegen": "node scripts/codegen-schema.js",
-    "prebuild": "npm run codegen",
-    "build": "echo 'Build process goes here'",
-    "lint:contract": "node scripts/lint-contract-compliance.js",
-    "validate:runtime": "node scripts/validate-runtime-schema.js",
-    "validate:runtime:strict": "node scripts/validate-runtime-schema.js --strict",
-    "validate:runtime:fix": "node scripts/validate-runtime-schema.js --generate-fix",
-    "test:contract": "node test/contract-compliance.test.js",
-    "test:all": "npm run test:contract && npm run lint:contract",
-    "prepare": "husky"
-  },
-  "devDependencies": {
-    "concurrently": "^7.6.0",
-    "husky": "^9.1.7"
+    "start": "node src/server.js",
+    "setup": "node scripts/setup.js",
+    "validate": "node scripts/validate.js",
+    "test": "node tests/integration/test-dashboard.js"
   },
   "dependencies": {
-    "node-fetch": "^3.3.2"
-  }
+    "express": "^4.18.0",
+    "ws": "^8.13.0",
+    "snowflake-sdk": "^1.9.0",
+    "dotenv": "^16.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "",
+  "license": "MIT"
 }
