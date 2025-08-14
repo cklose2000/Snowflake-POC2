@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: ServiceSpec
+metadata:
+  name: mcp-server
+  namespace: claude-bi
+spec:
+  containers:
+  - name: mcp-gateway
+    image: /CLAUDE_BI/PUBLIC/MCP_REPO/mcp-server:latest
+    command:
+    - python
+    - mcp_server.py
+    env:
+      SNOWFLAKE_ACCOUNT: "{{ .snowflake.account }}"
+      SNOWFLAKE_USER: "{{ .snowflake.user }}"
+      SNOWFLAKE_TOKEN: "{{ .snowflake.token }}"
+      MCP_USER: "{{ .snowflake.current_user }}"
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "0.5"
+      limits:
+        memory: "1Gi"
+        cpu: "1"
+    volumeMounts:
+    - name: contracts
+      mountPath: /app/contracts
+      readOnly: true
+    - name: templates
+      mountPath: /app/templates
+      readOnly: true
+    endpoints:
+    - name: api
+      port: 8080
+      protocol: HTTP
+      public: true
+    healthCheck:
+      httpGet:
+        path: /health
+        port: 8080
+      initialDelaySeconds: 10
+      periodSeconds: 30
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 10
+  
+  volumes:
+  - name: contracts
+    source: "@CLAUDE_BI.PUBLIC.MCP_STAGE/contracts/"
+  - name: templates
+    source: "@CLAUDE_BI.PUBLIC.MCP_STAGE/templates/"
+  
+  networkPolicies:
+  - name: snowflake-access
+    description: Allow access to Snowflake internal endpoints
+    ingress:
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: snowflake-system
+    egress:
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            name: snowflake-system
+      ports:
+      - protocol: TCP
+        port: 443

@@ -22,7 +22,6 @@ const WS_PORT = process.env.WS_PORT || 8080;
 
 // Middleware
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../ui')));
 
 // CORS for meta endpoints
 app.use((req, res, next) => {
@@ -30,6 +29,14 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   next();
 });
+
+// Redirect root to dashboard.html BEFORE static files
+app.get('/', (req, res) => {
+  res.redirect('/dashboard.html');
+});
+
+// Static files (after redirect)
+app.use(express.static(path.join(__dirname, '../ui')));
 
 // Global connections
 let snowflakeConn = null;

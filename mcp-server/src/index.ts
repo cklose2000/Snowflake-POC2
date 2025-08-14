@@ -13,9 +13,13 @@ import { listSourcesTool } from './tools/list-sources.js';
 import { validatePlanTool } from './tools/validate-plan.js';
 import { SnowflakeClient } from './clients/snowflake-client.js';
 import * as dotenv from 'dotenv';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
 
-// Load environment variables
-dotenv.config({ path: '../.env' });
+// Load environment variables from parent directory's .env file
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 // Initialize server
 const server = new Server(

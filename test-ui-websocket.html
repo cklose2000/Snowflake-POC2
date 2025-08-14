@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Test UI</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f23;
+            color: #e5e7eb;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #7c3aed;
+            margin-bottom: 20px;
+        }
+        .test-section {
+            background: #1a1b3a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .test-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        h2 {
+            color: #a78bfa;
+            font-size: 18px;
+        }
+        button {
+            background: #7c3aed;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        button:hover {
+            background: #6d28d9;
+        }
+        button:disabled {
+            background: #4c1d95;
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .output {
+            background: #0f0f23;
+            border: 1px solid #374151;
+            border-radius: 4px;
+            padding: 15px;
+            min-height: 100px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status.connected {
+            background: #10b981;
+            color: white;
+        }
+        .status.disconnected {
+            background: #ef4444;
+            color: white;
+        }
+        .query-input {
+            width: 100%;
+            background: #0f0f23;
+            border: 1px solid #374151;
+            color: #e5e7eb;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            font-family: inherit;
+        }
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .test-card {
+            background: #0f0f23;
+            border: 1px solid #374151;
+            border-radius: 4px;
+            padding: 15px;
+        }
+        .test-card h3 {
+            color: #a78bfa;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .success { color: #10b981; }
+        .error { color: #ef4444; }
+        .warning { color: #f59e0b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 MCP Server Integration Test UI</h1>
+        
+        <div class="test-section">
+            <div class="test-header">
+                <h2>WebSocket Connection</h2>
+                <span id="status" class="status disconnected">Disconnected</span>
+            </div>
+            <button onclick="connect()">Connect</button>
+            <button onclick="disconnect()">Disconnect</button>
+        </div>
+
+        <div class="test-section">
+            <h2>Test Natural Language Queries</h2>
+            <input type="text" id="nlQuery" class="query-input" 
+                   placeholder="Try: 'Show me activity from the last 24 hours'" 
+                   value="Show me the top 5 activities">
+            <button onclick="testNaturalLanguage()">Execute Query</button>
+            <div class="output" id="nlOutput">Results will appear here...</div>
+        </div>
+
+        <div class="test-section">
+            <h2>Quick Tests</h2>
+            <div class="test-grid">
+                <div class="test-card">
+                    <h3>📊 Activity Summary</h3>
+                    <button onclick="testActivitySummary()">Run Test</button>
+                    <div class="output" id="summaryOutput">...</div>
+                </div>
+                
+                <div class="test-card">
+                    <h3>📈 Hourly Trend</h3>
+                    <button onclick="testHourlyTrend()">Run Test</button>
+                    <div class="output" id="trendOutput">...</div>
+                </div>
+                
+                <div class="test-card">
+                    <h3>👥 Top Customers</h3>
+                    <button onclick="testTopCustomers()">Run Test</button>
+                    <div class="output" id="customersOutput">...</div>
+                </div>
+                
+                <div class="test-card">
+                    <h3>🎯 Recent Events</h3>
+                    <button onclick="testRecentEvents()">Run Test</button>
+                    <div class="output" id="eventsOutput">...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>Create Dashboard Test</h2>
+            <button onclick="testCreateDashboard()">Create Test Dashboard</button>
+            <div class="output" id="dashboardOutput">Dashboard creation results will appear here...</div>
+        </div>
+
+        <div class="test-section">
+            <h2>Full Output Log</h2>
+            <div class="output" id="fullOutput" style="height: 300px; overflow-y: auto;">
+                Waiting for connection...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let requestId = 1;
+
+        function log(message, type = 'info') {
+            const output = document.getElementById('fullOutput');
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            output.innerHTML += `[${timestamp}] ${prefix} ${message}\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function connect() {
+            if (ws) {
+                ws.close();
+            }
+
+            ws = new WebSocket('ws://localhost:8080');
+
+            ws.onopen = () => {
+                document.getElementById('status').className = 'status connected';
+                document.getElementById('status').textContent = 'Connected';
+                log('Connected to WebSocket server', 'success');
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                log('Received: ' + JSON.stringify(data).substring(0, 200) + '...');
+                handleMessage(data);
+            };
+
+            ws.onerror = (error) => {
+                log('WebSocket error: ' + error, 'error');
+            };
+
+            ws.onclose = () => {
+                document.getElementById('status').className = 'status disconnected';
+                document.getElementById('status').textContent = 'Disconnected';
+                log('Disconnected from server');
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function sendMessage(type, payload) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('Not connected!', 'error');
+                return;
+            }
+            
+            const message = { type, ...payload, requestId: requestId++ };
+            log('Sending: ' + JSON.stringify(message).substring(0, 100) + '...');
+            ws.send(JSON.stringify(message));
+        }
+
+        function handleMessage(data) {
+            if (data.type === 'query_result' && data.result) {
+                const outputId = data.outputId || 'nlOutput';
+                const output = document.getElementById(outputId);
+                
+                if (data.result.rows && data.result.rows.length > 0) {
+                    output.innerHTML = `<span class="success">✅ Query successful!</span>\n`;
+                    output.innerHTML += `Rows returned: ${data.result.rowCount || data.result.rows.length}\n\n`;
+                    
+                    // Show first few rows
+                    const preview = data.result.rows.slice(0, 5);
+                    output.innerHTML += 'Sample data:\n';
+                    output.innerHTML += JSON.stringify(preview, null, 2);
+                    
+                    if (data.result.rows.length > 5) {
+                        output.innerHTML += `\n... and ${data.result.rows.length - 5} more rows`;
+                    }
+                } else {
+                    output.innerHTML = '<span class="warning">No data returned</span>';
+                }
+            } else if (data.type === 'error') {
+                const outputId = data.outputId || 'nlOutput';
+                const output = document.getElementById(outputId);
+                output.innerHTML = `<span class="error">Error: ${data.message || data.error}</span>`;
+            } else if (data.type === 'dashboard_complete') {
+                document.getElementById('dashboardOutput').innerHTML = 
+                    `<span class="success">Dashboard created!</span>\n` +
+                    `ID: ${data.result.dashboard_id}\n` +
+                    `URL: ${data.result.dashboard_url || 'N/A'}\n` +
+                    `Objects created: ${data.result.objectsCreated || 0}`;
+            }
+        }
+
+        function testNaturalLanguage() {
+            const query = document.getElementById('nlQuery').value;
+            if (!query) return;
+            
+            document.getElementById('nlOutput').innerHTML = 'Processing...';
+            sendMessage('chat', { message: query, outputId: 'nlOutput' });
+        }
+
+        function testActivitySummary() {
+            document.getElementById('summaryOutput').innerHTML = 'Loading...';
+            sendMessage('execute_panel', {
+                panel: {
+                    source: 'VW_ACTIVITY_SUMMARY',
+                    type: 'metrics'
+                },
+                outputId: 'summaryOutput'
+            });
+        }
+
+        function testHourlyTrend() {
+            document.getElementById('trendOutput').innerHTML = 'Loading...';
+            sendMessage('execute_panel', {
+                panel: {
+                    source: 'VW_ACTIVITY_COUNTS_24H',
+                    x: 'HOUR',
+                    metric: 'EVENT_COUNT',
+                    type: 'time_series'
+                },
+                outputId: 'trendOutput'
+            });
+        }
+
+        function testTopCustomers() {
+            document.getElementById('customersOutput').innerHTML = 'Loading...';
+            sendMessage('execute_panel', {
+                panel: {
+                    source: 'VW_ACTIVITY_COUNTS_24H',
+                    metric: 'EVENT_COUNT',
+                    group_by: ['ACTIVITY'],
+                    type: 'ranking',
+                    top_n: 5
+                },
+                outputId: 'customersOutput'
+            });
+        }
+
+        function testRecentEvents() {
+            document.getElementById('eventsOutput').innerHTML = 'Loading...';
+            sendMessage('execute_panel', {
+                panel: {
+                    type: 'live_feed',
+                    limit: 10
+                },
+                outputId: 'eventsOutput'
+            });
+        }
+
+        function testCreateDashboard() {
+            document.getElementById('dashboardOutput').innerHTML = 'Creating dashboard...';
+            sendMessage('dashboard', {
+                conversation: [
+                    { message: 'Create a dashboard with activity metrics' }
+                ],
+                outputId: 'dashboardOutput'
+            });
+        }
+
+        // Auto-connect on load
+        window.onload = () => {
+            setTimeout(connect, 500);
+        };
+    </script>
+</body>
+</html>

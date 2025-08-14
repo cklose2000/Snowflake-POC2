@@ -1,0 +1,100 @@
+{
+  "version": "2.0.0",
+  "database": "CLAUDE_BI",
+  "schemas": {
+    "ACTIVITY": {
+      "tables": {
+        "EVENTS": {
+          "type": "activity_stream",
+          "required_columns": [
+            "ACTIVITY_ID",
+            "TS",
+            "CUSTOMER",
+            "ACTIVITY",
+            "FEATURE_JSON"
+          ],
+          "optional_columns": [
+            "ANONYMOUS_CUSTOMER_ID",
+            "REVENUE_IMPACT",
+            "LINK",
+            "_SOURCE_SYSTEM",
+            "_SOURCE_VERSION",
+            "_SESSION_ID",
+            "_QUERY_TAG",
+            "_ACTIVITY_OCCURRENCE",
+            "_ACTIVITY_REPEATED_AT"
+          ]
+        }
+      }
+    },
+    "ACTIVITY_CCODE": {
+      "views": {
+        "VW_ACTIVITY_COUNTS_24H": {
+          "columns": ["HOUR", "ACTIVITY", "EVENT_COUNT", "UNIQUE_CUSTOMERS"],
+          "description": "Hourly activity counts for last 24 hours"
+        },
+        "VW_ACTIVITY_SUMMARY": {
+          "columns": ["TOTAL_EVENTS", "UNIQUE_CUSTOMERS", "UNIQUE_ACTIVITIES", "LAST_EVENT"],
+          "description": "Summary metrics for last 24 hours"
+        },
+        "VW_LLM_TELEMETRY": {
+          "columns": ["TS", "CUSTOMER", "MODEL", "PROMPT_TOKENS", "COMPLETION_TOKENS", "LATENCY_MS"],
+          "description": "LLM usage telemetry"
+        },
+        "VW_SQL_EXECUTIONS": {
+          "columns": ["TS", "CUSTOMER", "QUERY_ID", "QUERY_TAG", "BYTES_SCANNED", "DURATION_MS", "SUCCESS"],
+          "description": "SQL execution history"
+        },
+        "VW_DASHBOARD_OPERATIONS": {
+          "columns": ["TS", "CUSTOMER", "DASHBOARD_ID", "ACTION", "SUCCESS"],
+          "description": "Dashboard creation and access logs"
+        }
+      },
+      "tables": {
+        "ARTIFACTS": {
+          "columns": ["ARTIFACT_ID", "SAMPLE", "ROW_COUNT", "SCHEMA_JSON", "S3_URL", "BYTES", "CREATED_TS", "CUSTOMER", "CREATED_BY_ACTIVITY"]
+        },
+        "AUDIT_RESULTS": {
+          "columns": ["AUDIT_ID", "ACTIVITY_ID", "PASSED", "FINDINGS", "REMEDIATION", "CREATED_TS"]
+        }
+      }
+    },
+    "ANALYTICS": {
+      "tables": {
+        "SCHEMA_VERSION": {
+          "columns": ["VERSION", "APPLIED_TS", "APPLIED_BY"]
+        }
+      }
+    }
+  },
+  "allowed_aggregations": ["COUNT", "SUM", "AVG", "MIN", "MAX", "COUNT_DISTINCT"],
+  "allowed_grains": ["MINUTE", "HOUR", "DAY", "WEEK", "MONTH", "QUARTER", "YEAR"],
+  "allowed_operators": ["=", "!=", ">", ">=", "<", "<=", "IN", "NOT IN", "LIKE", "BETWEEN"],
+  "security": {
+    "max_rows_per_query": 10000,
+    "max_bytes_scanned": "5GB",
+    "allowed_roles": ["CLAUDE_BI_ROLE", "CLAUDE_BI_READONLY"],
+    "query_timeout_seconds": 300,
+    "forbidden_operations": ["CREATE", "DROP", "ALTER", "INSERT", "UPDATE", "DELETE", "MERGE", "TRUNCATE"],
+    "allowed_operations": ["SELECT"]
+  },
+  "activity_namespaces": {
+    "ccode": {
+      "description": "Claude Code activities",
+      "events": [
+        "query_planned",
+        "sql_rendered",
+        "query_executed",
+        "query_cached",
+        "dashboard_requested",
+        "dashboard_created",
+        "dashboard_scheduled",
+        "dashboard_accessed",
+        "schema_validated",
+        "security_blocked",
+        "mcp_tool_called",
+        "error_occurred"
+      ]
+    }
+  }
+}

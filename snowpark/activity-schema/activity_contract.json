@@ -1,0 +1,196 @@
+{
+  "schema_version": "2.1.0",
+  "description": "Activity Schema 2.0 with event-based user management",
+  "architecture": {
+    "database": "CLAUDE_BI",
+    "tables": {
+      "LANDING.RAW_EVENTS": {
+        "type": "landing_zone",
+        "description": "Write target for ALL ingestion - business events, permissions, audit logs",
+        "columns": {
+          "payload": "VARIANT - Event data",
+          "_source_lane": "STRING - Ingestion channel identifier",
+          "_recv_at": "TIMESTAMP_TZ - Reception timestamp"
+        }
+      },
+      "ACTIVITY.EVENTS": {
+        "type": "dynamic_table",
+        "description": "Single source of truth - auto-refreshes every minute",
+        "refresh_lag": "1 minute",
+        "warehouse": "DT_XS_WH",
+        "features": [
+          "Deduplication by event hash",
+          "Dependency checking",
+          "Schema evolution (2.0 → 2.1)",
+          "Poison-pill protection (< 1MB payloads)",
+          "Deterministic sequencing"
+        ]
+      }
+    }
+  },
+  "reserved_namespaces": {
+    "system": {
+      "description": "System administration events",
+      "source_required": "system",
+      "actions": [
+        "system.permission.granted",
+        "system.permission.revoked",
+        "system.user.created",
+        "system.user.disabled",
+        "system.user.enabled",
+        "system.cost.measured",
+        "system.dependency.missing"
+      ]
+    },
+    "mcp": {
+      "description": "MCP query execution events",
+      "source_required": "mcp",
+      "actions": [
+        "mcp.query.executed",
+        "mcp.query.rejected",
+        "mcp.export.completed",
+        "mcp.rate_limit.hit"
+      ]
+    },
+    "quality": {
+      "description": "Data quality events",
+      "source_required": "quality",
+      "actions": [
+        "quality.check.passed",
+        "quality.check.failed",
+        "quality.anomaly.detected"
+      ]
+    }
+  },
+  "business_actions": {
+    "order": ["placed", "shipped", "delivered", "cancelled", "returned"],
+    "user": ["signup", "activated", "upgraded", "churned"],
+    "payment": ["processed", "failed", "refunded"],
+    "product": ["viewed", "added_to_cart", "removed_from_cart", "reviewed"],
+    "subscription": ["started", "renewed", "cancelled", "expired"]
+  },
+  "event_structure": {
+    "required_fields": {
+      "action": "string - The event action (e.g., 'order.placed')",
+      "occurred_at": "timestamp_tz - When the event occurred"
+    },
+    "optional_fields": {
+      "event_id": "string - Unique identifier (auto-generated if missing)",
+      "actor_id": "string - Who/what triggered the event",
+      "source": "string - System that generated the event",
+      "schema_version": "string - Event schema version",
+      "object": {
+        "type": "string - Type of object affected",
+        "id": "string - Unique identifier of object"
+      },
+      "attributes": "variant - Event-specific metadata",
+      "depends_on_event_id": "string - Parent event dependency"
+    }
+  },
+  "permission_model": {
+    "description": "Permissions are events, not tables",
+    "permission_attributes": {
+      "allowed_actions": "array<string> - List of allowed event actions",
+      "max_rows": "number - Maximum rows per query",
+      "daily_runtime_budget_s": "number - Daily runtime limit in seconds",
+      "can_export": "boolean - Whether user can export data",
+      "expires_at": "timestamp - When permission expires",
+      "granted_by": "string - Who granted the permission"
+    },
+    "rules": [
+      "Latest permission event determines current access",
+      "Revocation events override grants",
+      "Expired permissions are automatically invalid",
+      "All permission changes create audit events"
+    ]
+  },
+  "security_model": {
+    "roles": {
+      "MCP_USER_ROLE": {
+        "description": "Basic user - can only execute MCP procedures",
+        "permissions": ["EXECUTE PROCEDURE MCP.EXECUTE_QUERY_PLAN"]
+      },
+      "MCP_SERVICE_ROLE": {
+        "description": "Service role for procedures (EXECUTE AS OWNER)",
+        "permissions": [
+          "SELECT ON ACTIVITY.EVENTS",
+          "INSERT ON LANDING.RAW_EVENTS"
+        ]
+      },
+      "MCP_ADMIN_ROLE": {
+        "description": "Admin - manages users and permissions",
+        "permissions": [
+          "CREATE USER",
+          "GRANT/REVOKE PERMISSIONS",
+          "VIEW ALL MONITORING DATA"
+        ]
+      }
+    },
+    "principles": [
+      "Users have NO direct table access",
+      "All queries go through MCP procedures",
+      "Procedures check permissions via events",
+      "Every action is logged as an event"
+    ]
+  },
+  "query_execution": {
+    "pattern": "query_id_return",
+    "description": "Procedures return query_id for RESULT_SCAN pattern",
+    "flow": [
+      "1. User calls EXECUTE_QUERY_PLAN with plan JSON",
+      "2. Procedure checks latest permission event",
+      "3. Validates plan against permissions",
+      "4. Checks runtime budget",
+      "5. Executes safe parameterized SQL",
+      "6. Logs execution as event",
+      "7. Returns query_id",
+      "8. Client uses RESULT_SCAN(query_id) for rows"
+    ],
+    "rate_limiting": {
+      "method": "runtime_seconds",
+      "window": "24_hours",
+      "enforcement": "real_time"
+    }
+  },
+  "monitoring_views": {
+    "CURRENT_USER_PERMISSIONS": "Latest permission state per user",
+    "QUERY_ACTIVITY_LAST_24H": "Recent query activity",
+    "USER_RUNTIME_LAST_24H": "Runtime usage for rate limiting",
+    "PERMISSION_CHANGES_LAST_30D": "Audit trail of permission changes",
+    "QUERY_REJECTIONS_LAST_7D": "Failed query attempts",
+    "SYSTEM_HEALTH_HOURLY": "System metrics by hour"
+  },
+  "deployment": {
+    "order": [
+      "01_setup_database.sql",
+      "02_create_raw_events.sql",
+      "03_create_dynamic_table.sql",
+      "04_create_roles.sql",
+      "05_mcp_procedures.sql",
+      "06_monitoring_views.sql",
+      "07_user_management.sql",
+      "08_test_setup.sql"
+    ],
+    "warehouses": {
+      "DT_XS_WH": "Dynamic Table refresh only",
+      "MCP_XS_WH": "Query execution"
+    },
+    "testing": {
+      "test_users": [
+        "sarah_marketing",
+        "john_analyst",
+        "intern_viewer",
+        "exec_dashboard"
+      ],
+      "test_script": "test-mcp-access.js"
+    }
+  },
+  "benefits": {
+    "zero_admin_tables": "Everything flows through 2 tables",
+    "complete_audit": "Every action is an immutable event",
+    "temporal_permissions": "Query who had access when",
+    "native_security": "Snowflake authentication, no external auth",
+    "minimal_maintenance": "No schema changes for permission updates",
+    "cost_efficient": "Two XS warehouses, pay per use"
+  }
+}
