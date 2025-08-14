@@ -24,6 +24,13 @@ const WS_PORT = process.env.WS_PORT || 8080;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../ui')));
 
+// CORS for meta endpoints
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+});
+
 // Global connections
 let snowflakeConn = null;
 let dashboardFactory = null;
@@ -125,6 +132,24 @@ async function initialize() {
 
 // HTTP API endpoints
 function startHttpServer() {
+  // Meta endpoints for schema-driven UI
+  app.get('/meta/schema', (req, res) => {
+    res.json({
+      views: GeneratedSchema.VIEW_COLUMNS,
+      tables: GeneratedSchema.TABLE_COLUMNS,
+      hash: GeneratedSchema.CONTRACT_HASH,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  app.get('/meta/user', (req, res) => {
+    res.json({
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      theme: req.query.theme || 'dark',
+      customer: process.env.ACTIVITY_CUSTOMER || 'default_user'
+    });
+  });
+  
   // Health check
   app.get('/health', (req, res) => {
     res.json({
@@ -227,6 +252,11 @@ function startWebSocketServer() {
             await handleQueryRequest(ws, data);
             break;
             
+          case 'execute_panel':
+            // Execute panel query from dashboard
+            await handlePanelRequest(ws, data);
+            break;
+            
           default:
             ws.send(JSON.stringify({ 
               type: 'error', 
@@ -260,53 +290,79 @@ async function handleChatMessage(ws, data) {
   // Parse the message to understand the query intent
   const message = data.message.toLowerCase();
   
-  // Check if this is a time series request
-  if (message.includes('hour') && (message.includes('24 hour') || message.includes('last 24'))) {
-    // Generate and execute a time series query
-    try {
-      const sql = `
-        SELECT 
-          DATE_TRUNC('hour', ts) as hour,
-          COUNT(*) as activity_count
-        FROM ${SchemaContract.fqn('ACTIVITY', 'EVENTS')}
-        WHERE ts >= DATEADD('hour', -24, CURRENT_TIMESTAMP())
-        GROUP BY 1
-        ORDER BY 1 DESC
+  try {
+    let sql = '';
+    let queryType = '';
+    
+    // Check for different query patterns
+    if (message.includes('hour') && (message.includes('24 hour') || message.includes('last 24'))) {
+      // Use the view that already has the right column names
+      sql = `SELECT * FROM ${GeneratedSchema.fqn('ACTIVITY_CCODE', 'VW_ACTIVITY_COUNTS_24H')} ORDER BY HOUR DESC`;
+      queryType = 'time_series';
+      
+    } else if (message.includes('top') && (message.includes('activity') || message.includes('activities'))) {
+      // Top activities
+      sql = `
+        SELECT ACTIVITY, SUM(EVENT_COUNT) as EVENT_COUNT
+        FROM ${GeneratedSchema.fqn('ACTIVITY_CCODE', 'VW_ACTIVITY_COUNTS_24H')}
+        GROUP BY ACTIVITY
+        ORDER BY EVENT_COUNT DESC
+        LIMIT 10
       `;
+      queryType = 'ranking';
       
-      const result = await SnowflakeClient.execute(snowflakeConn, sql);
+    } else if (message.includes('summary') || message.includes('metrics') || message.includes('total')) {
+      // Summary metrics
+      sql = `SELECT * FROM ${GeneratedSchema.fqn('ACTIVITY_CCODE', 'VW_ACTIVITY_SUMMARY')}`;
+      queryType = 'metrics';
       
-      // Log the SQL execution
-      await activityLogger.log('sql_executed', {
-        template: 'time_series',
-        rows_returned: result.rows?.length || 0
-      });
+    } else if (message.includes('recent') || message.includes('latest')) {
+      // Recent events
+      sql = `
+        SELECT activity_id, ts, customer, activity
+        FROM ${GeneratedSchema.fqn('ACTIVITY', 'EVENTS')}
+        ORDER BY ts DESC
+        LIMIT 20
+      `;
+      queryType = 'feed';
       
-      ws.send(JSON.stringify({
-        type: 'query_result',
-        result: {
-          rows: result.rows,
-          rowCount: result.rows?.length || 0,
-          queryId: result.queryId
-        }
-      }));
+    } else {
+      // Default - show summary
+      sql = `SELECT * FROM ${GeneratedSchema.fqn('ACTIVITY_CCODE', 'VW_ACTIVITY_SUMMARY')}`;
+      queryType = 'metrics';
       
       ws.send(JSON.stringify({
         type: 'response',
-        message: 'I\'ve generated a time series query showing activity counts by hour for the last 24 hours.'
-      }));
-      
-    } catch (error) {
-      ws.send(JSON.stringify({
-        type: 'error',
-        message: `Query failed: ${error.message}`
+        message: 'I\'ll show you a summary of the activity data. Try asking for "activities by hour", "top activities", or "recent events" for more specific results.'
       }));
     }
-  } else {
-    // Default echo response
+    
+    // Execute the query
+    const result = await SnowflakeClient.execute(snowflakeConn, sql);
+    
+    // Log the SQL execution
+    await activityLogger.log('sql_executed', {
+      template: queryType,
+      rows_returned: result.rows?.length || 0,
+      natural_language: true
+    });
+    
+    // Send result
     ws.send(JSON.stringify({
-      type: 'response',
-      message: `Received: ${data.message}`
+      type: 'query_result',
+      result: {
+        rows: result.rows,
+        rowCount: result.rows?.length || 0,
+        queryId: result.queryId,
+        queryType: queryType
+      }
+    }));
+    
+  } catch (error) {
+    console.error('Chat query error:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      message: `Query failed: ${error.message}`
     }));
   }
 }
@@ -352,6 +408,75 @@ async function handleQueryRequest(ws, data) {
     ws.send(JSON.stringify({
       type: 'query_error',
       error: error.message
+    }));
+  }
+}
+
+async function handlePanelRequest(ws, data) {
+  try {
+    const panel = data.panel;
+    let sql = '';
+    
+    // Build SQL based on panel type
+    if (panel.type === 'time_series' && panel.source) {
+      sql = `
+        SELECT ${panel.x}, ${panel.metric}
+        FROM ${GeneratedSchema.fqn('ACTIVITY_CCODE', panel.source)}
+        ORDER BY ${panel.x}
+      `;
+    } else if (panel.type === 'ranking' && panel.source) {
+      if (panel.group_by && panel.group_by.length > 0) {
+        const groupCols = panel.group_by.join(', ');
+        sql = `
+          SELECT ${groupCols}, 
+                 SUM(${panel.metric}) AS METRIC_VALUE
+          FROM ${GeneratedSchema.fqn('ACTIVITY_CCODE', panel.source)}
+          GROUP BY ${groupCols}
+          ORDER BY METRIC_VALUE DESC
+          LIMIT ${panel.top_n || 10}
+        `;
+      }
+    } else if (panel.type === 'metrics' && panel.source) {
+      sql = `SELECT * FROM ${GeneratedSchema.fqn('ACTIVITY_CCODE', panel.source)}`;
+    } else if (panel.type === 'live_feed') {
+      sql = `
+        SELECT activity_id, ts, customer, activity, feature_json
+        FROM ${GeneratedSchema.fqn('ACTIVITY', 'EVENTS')}
+        ORDER BY ts DESC
+        LIMIT ${panel.limit || 50}
+      `;
+    }
+    
+    if (!sql) {
+      throw new Error('Unable to generate SQL for panel');
+    }
+    
+    // Execute the query
+    const result = await SnowflakeClient.execute(snowflakeConn, sql);
+    
+    // Log the activity
+    await activityLogger.log('panel_executed', {
+      panel_type: panel.type,
+      source: panel.source,
+      rows_returned: result.rows?.length || 0
+    });
+    
+    // Send result
+    ws.send(JSON.stringify({
+      type: 'query_result',
+      result: {
+        rows: result.rows,
+        rowCount: result.rows?.length || 0,
+        queryId: result.queryId,
+        panel: panel
+      }
+    }));
+    
+  } catch (error) {
+    console.error('Panel execution error:', error);
+    ws.send(JSON.stringify({
+      type: 'error',
+      message: `Panel execution failed: ${error.message}`
     }));
   }
 }

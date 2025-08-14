@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Snowflake Analytics</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+  <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body class="bg-[var(--bg)] text-[var(--text)] overflow-hidden">
+  <!-- Main Grid - responsive with 3 breakpoints -->
+  <main class="grid gap-4 h-dvh
+               grid-cols-1 md:grid-cols-2 lg:grid-cols-3
+               grid-rows-[auto_1fr] p-4 pb-20 md:pb-4">
+    
+    <!-- Header spans all columns -->
+    <header class="col-span-full bg-[var(--surface)] rounded-lg p-4 flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+          <span class="text-white font-bold text-lg">S</span>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold">Snowflake Analytics</h1>
+          <p class="text-xs opacity-60">Activity Dashboard</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <span class="text-sm opacity-60">Live</span>
+          <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+        </div>
+        <button onclick="toggleTheme()" class="p-2 hover:bg-[var(--bg)] rounded-lg transition">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+    
+    <!-- Query Panel - visible on all breakpoints -->
+    <section id="query-panel" class="bg-[var(--surface)] rounded-lg p-4 overflow-y-auto mobile-panel">
+      <h2 class="text-lg font-semibold mb-4">Quick Queries</h2>
+      
+      <!-- Query suggestions populated from schema -->
+      <div id="suggestions" class="space-y-2 mb-6">
+        <!-- Loading state -->
+        <div class="animate-pulse">
+          <div class="h-12 bg-[var(--bg)] rounded-lg mb-2"></div>
+          <div class="h-12 bg-[var(--bg)] rounded-lg mb-2"></div>
+          <div class="h-12 bg-[var(--bg)] rounded-lg"></div>
+        </div>
+      </div>
+      
+      <!-- Custom query input -->
+      <div class="border-t border-[var(--border)] pt-4">
+        <label class="text-sm opacity-60 block mb-2">Custom Query</label>
+        <textarea 
+          id="custom-query"
+          class="w-full p-3 bg-[var(--bg)] rounded-lg resize-none border border-[var(--border)] focus:border-[var(--accent)] transition"
+          rows="3"
+          placeholder="Ask about your data..."
+          onkeydown="if(event.key === 'Enter' && event.ctrlKey) executeCustomQuery()"></textarea>
+        <button 
+          onclick="executeCustomQuery()"
+          class="mt-2 w-full py-3 bg-[var(--accent)] hover:opacity-90 rounded-lg font-medium transition touch-target">
+          Analyze
+        </button>
+      </div>
+    </section>
+    
+    <!-- Activity Stream - hidden on mobile, visible on tablet+ -->
+    <section id="stream-panel" class="bg-[var(--surface)] rounded-lg p-4 overflow-hidden hidden md:block mobile-panel">
+      <h2 class="text-lg font-semibold mb-4">Live Activity</h2>
+      
+      <!-- Activity feed with virtual scrolling -->
+      <div id="activity-feed" class="space-y-2 overflow-y-auto max-h-[calc(100%-2rem)]">
+        <!-- Loading state -->
+        <div class="animate-pulse">
+          <div class="h-16 bg-[var(--bg)] rounded-lg mb-2"></div>
+          <div class="h-16 bg-[var(--bg)] rounded-lg mb-2"></div>
+          <div class="h-16 bg-[var(--bg)] rounded-lg"></div>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Visualizations - spans remaining space -->
+    <section id="viz-panel" class="bg-[var(--surface)] rounded-lg p-4 overflow-y-auto mobile-panel">
+      <h2 class="text-lg font-semibold mb-4">Analytics</h2>
+      
+      <!-- Metric Cards -->
+      <div class="grid grid-cols-2 gap-2 mb-4">
+        <div class="bg-[var(--bg)] p-3 rounded-lg">
+          <div class="text-xs opacity-60">Total Events</div>
+          <div id="metric-total" class="text-2xl font-bold">-</div>
+          <div id="metric-total-change" class="text-xs opacity-60"></div>
+        </div>
+        <div class="bg-[var(--bg)] p-3 rounded-lg">
+          <div class="text-xs opacity-60">Active Users</div>
+          <div id="metric-users" class="text-2xl font-bold">-</div>
+          <div id="metric-users-change" class="text-xs opacity-60"></div>
+        </div>
+      </div>
+      
+      <!-- Charts container -->
+      <div class="space-y-4">
+        <!-- Time series chart -->
+        <div class="bg-[var(--bg)] p-4 rounded-lg">
+          <h3 class="text-sm font-medium mb-2 opacity-80">Activity Trend</h3>
+          <div class="h-48">
+            <canvas id="trend-chart"></canvas>
+          </div>
+        </div>
+        
+        <!-- Ranking chart -->
+        <div class="bg-[var(--bg)] p-4 rounded-lg">
+          <h3 class="text-sm font-medium mb-2 opacity-80">Top Activities</h3>
+          <div class="h-48">
+            <canvas id="ranking-chart"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  
+  <!-- Mobile Tab Bar - fixed bottom, only visible on mobile -->
+  <nav class="fixed bottom-0 inset-x-0 bg-[var(--surface)] border-t border-[var(--border)] md:hidden">
+    <div class="grid grid-cols-3">
+      <button 
+        onclick="showMobilePanel('query')" 
+        class="py-4 text-center touch-target mobile-tab active"
+        data-panel="query">
+        <svg class="w-5 h-5 mx-auto mb-1" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
+        </svg>
+        <span class="block text-xs">Query</span>
+      </button>
+      <button 
+        onclick="showMobilePanel('stream')" 
+        class="py-4 text-center touch-target mobile-tab"
+        data-panel="stream">
+        <svg class="w-5 h-5 mx-auto mb-1" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
+        </svg>
+        <span class="block text-xs">Stream</span>
+      </button>
+      <button 
+        onclick="showMobilePanel('viz')" 
+        class="py-4 text-center touch-target mobile-tab"
+        data-panel="viz">
+        <svg class="w-5 h-5 mx-auto mb-1" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/>
+        </svg>
+        <span class="block text-xs">Charts</span>
+      </button>
+    </div>
+  </nav>
+  
+  <!-- Toast notifications -->
+  <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+  
+  <!-- Scripts -->
+  <script src="js/schema-client.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>
