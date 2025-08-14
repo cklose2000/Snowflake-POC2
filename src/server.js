@@ -14,6 +14,7 @@ const DashboardFactory = require('./dashboard-factory');
 const ActivityLogger = require('./activity-logger');
 const SchemaContract = require('./schema-contract');
 const SnowflakeClient = require('./snowflake-client');
+const GeneratedSchema = require('./generated-schema');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,6 +29,68 @@ let snowflakeConn = null;
 let dashboardFactory = null;
 let activityLogger = null;
 
+// Runtime schema validation
+async function validateRuntimeSchema(conn) {
+  const mismatches = [];
+  
+  // Check each view in the contract
+  for (const [viewName, expectedColumns] of Object.entries(GeneratedSchema.VIEW_COLUMNS)) {
+    try {
+      // Query actual columns from Snowflake
+      const sql = `
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_CATALOG = '${GeneratedSchema.DB}'
+          AND TABLE_SCHEMA = 'ACTIVITY_CCODE'
+          AND TABLE_NAME = '${viewName}'
+        ORDER BY ORDINAL_POSITION
+      `;
+      
+      const result = await SnowflakeClient.execute(conn, sql);
+      
+      if (result.rows.length === 0) {
+        mismatches.push(`View ${viewName} not found in database`);
+        continue;
+      }
+      
+      const actualColumns = result.rows.map(r => r.COLUMN_NAME.toUpperCase());
+      const expectedSet = new Set(expectedColumns);
+      const actualSet = new Set(actualColumns);
+      
+      // Check for missing columns
+      for (const col of expectedColumns) {
+        if (!actualSet.has(col)) {
+          mismatches.push(`View ${viewName}: Expected column ${col} not found`);
+        }
+      }
+      
+      // Check for extra columns (warning only)
+      for (const col of actualColumns) {
+        if (!expectedSet.has(col)) {
+          console.warn(`⚠️  View ${viewName}: Extra column ${col} found (not in contract)`);
+        }
+      }
+    } catch (error) {
+      mismatches.push(`View ${viewName}: ${error.message}`);
+    }
+  }
+  
+  if (mismatches.length > 0) {
+    console.error('❌ Schema validation failed:');
+    mismatches.forEach(m => console.error(`   - ${m}`));
+    
+    // Log schema violation
+    if (activityLogger) {
+      await activityLogger.log('schema_violation', {
+        mismatches: mismatches,
+        contract_hash: GeneratedSchema.CONTRACT_HASH
+      });
+    }
+    
+    throw new Error(`Schema mismatch detected: ${mismatches.length} issues found`);
+  }
+}
+
 // Initialize services
 async function initialize() {
   console.log('🚀 Starting Snowflake POC2 Server...\n');
@@ -40,6 +103,10 @@ async function initialize() {
     // 2. Validate schema contract
     await SchemaContract.validate(snowflakeConn);
     console.log('✅ Schema contract validated');
+    
+    // 3. Runtime sentinel - validate actual schema matches contract
+    await validateRuntimeSchema(snowflakeConn);
+    console.log('✅ Runtime schema validated');
     
     // 3. Initialize services
     activityLogger = new ActivityLogger(snowflakeConn);
@@ -140,7 +207,9 @@ function startWebSocketServer() {
     
     ws.on('message', async (message) => {
       try {
+        console.log('📨 Received message:', message.toString());
         const data = JSON.parse(message);
+        console.log('📦 Parsed data:', data);
         
         switch (data.type) {
           case 'chat':
@@ -188,11 +257,58 @@ async function handleChatMessage(ws, data) {
     message_length: data.message?.length || 0
   });
   
-  // Echo for now (would integrate with Claude in production)
-  ws.send(JSON.stringify({
-    type: 'response',
-    message: `Received: ${data.message}`
-  }));
+  // Parse the message to understand the query intent
+  const message = data.message.toLowerCase();
+  
+  // Check if this is a time series request
+  if (message.includes('hour') && (message.includes('24 hour') || message.includes('last 24'))) {
+    // Generate and execute a time series query
+    try {
+      const sql = `
+        SELECT 
+          DATE_TRUNC('hour', ts) as hour,
+          COUNT(*) as activity_count
+        FROM ${SchemaContract.fqn('ACTIVITY', 'EVENTS')}
+        WHERE ts >= DATEADD('hour', -24, CURRENT_TIMESTAMP())
+        GROUP BY 1
+        ORDER BY 1 DESC
+      `;
+      
+      const result = await SnowflakeClient.execute(snowflakeConn, sql);
+      
+      // Log the SQL execution
+      await activityLogger.log('sql_executed', {
+        template: 'time_series',
+        rows_returned: result.rows?.length || 0
+      });
+      
+      ws.send(JSON.stringify({
+        type: 'query_result',
+        result: {
+          rows: result.rows,
+          rowCount: result.rows?.length || 0,
+          queryId: result.queryId
+        }
+      }));
+      
+      ws.send(JSON.stringify({
+        type: 'response',
+        message: 'I\'ve generated a time series query showing activity counts by hour for the last 24 hours.'
+      }));
+      
+    } catch (error) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        message: `Query failed: ${error.message}`
+      }));
+    }
+  } else {
+    // Default echo response
+    ws.send(JSON.stringify({
+      type: 'response',
+      message: `Received: ${data.message}`
+    }));
+  }
 }
 
 async function handleDashboardRequest(ws, data) {

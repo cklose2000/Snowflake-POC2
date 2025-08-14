@@ -5,6 +5,7 @@
 
 const crypto = require('crypto');
 const SchemaContract = require('./schema-contract');
+const GeneratedSchema = require('./generated-schema');
 
 class DashboardFactory {
   constructor(snowflakeConn, activityLogger) {
@@ -143,36 +144,57 @@ class DashboardFactory {
    * Generate panels based on intent
    */
   generatePanels(intent) {
-    // Standard Activity dashboard panels
-    return [
+    // Standard Activity dashboard panels - only use views that exist
+    const panels = [
       {
         id: 'activity_summary',
         type: 'metrics',
-        source: SchemaContract.qualifySource('VW_ACTIVITY_SUMMARY')
+        source: 'VW_ACTIVITY_SUMMARY',
+        columns: GeneratedSchema.VIEW_COLUMNS.VW_ACTIVITY_SUMMARY
       },
       {
         id: 'activity_counts',
         type: 'chart',
-        source: SchemaContract.qualifySource('VW_ACTIVITY_COUNTS_24H'),
-        x: 'hour',
-        y: 'event_count',
-        metric: 'event_count'
+        source: 'VW_ACTIVITY_COUNTS_24H',
+        x: 'HOUR',
+        y: 'EVENT_COUNT',
+        metric: 'EVENT_COUNT',
+        columns: GeneratedSchema.VIEW_COLUMNS.VW_ACTIVITY_COUNTS_24H
       },
       {
         id: 'top_activities',
         type: 'table',
-        source: SchemaContract.qualifySource('VW_ACTIVITY_COUNTS_24H'),
-        metric: 'event_count',
-        top_n: 10
-      },
-      {
-        id: 'sql_executions',
-        type: 'table',
-        source: SchemaContract.qualifySource('VW_SQL_EXECUTIONS'),
-        metric: 'execution_count',
-        top_n: 10
+        source: 'VW_ACTIVITY_COUNTS_24H',
+        metric: 'EVENT_COUNT',
+        group_by: ['ACTIVITY'],
+        top_n: 10,
+        columns: GeneratedSchema.VIEW_COLUMNS.VW_ACTIVITY_COUNTS_24H
       }
     ];
+    
+    // Validate all panels have valid columns
+    for (const panel of panels) {
+      if (panel.x || panel.y || panel.metric) {
+        const columnsToCheck = [
+          panel.x,
+          panel.y,
+          panel.metric,
+          ...(panel.group_by || [])
+        ].filter(Boolean);
+        
+        try {
+          GeneratedSchema.assertColumnsExist(panel.source, columnsToCheck);
+        } catch (error) {
+          console.error(`Panel ${panel.id} validation failed:`, error.message);
+          // Remove invalid columns
+          if (panel.x && !panel.columns.includes(panel.x)) delete panel.x;
+          if (panel.y && !panel.columns.includes(panel.y)) delete panel.y;
+          if (panel.metric && !panel.columns.includes(panel.metric)) panel.metric = panel.columns[0];
+        }
+      }
+    }
+    
+    return panels;
   }
 
   /**
@@ -180,33 +202,52 @@ class DashboardFactory {
    */
   async createPanelView(spec, panel) {
     const viewName = `${spec.name}_${panel.id}_${spec.hash.substring(0, 8)}`;
-    const qualifiedViewName = SchemaContract.fqn('ANALYTICS', viewName);
+    const qualifiedViewName = GeneratedSchema.fqn('ANALYTICS', viewName);
+    const sourceView = GeneratedSchema.VIEW_FQN_MAP[panel.source] || 
+                      GeneratedSchema.fqn('ACTIVITY_CCODE', panel.source);
 
     let sql = '';
     
     switch (panel.type) {
       case 'metrics':
         sql = `CREATE OR REPLACE VIEW ${qualifiedViewName} AS 
-               SELECT * FROM ${panel.source}`;
+               SELECT * FROM ${sourceView}`;
         break;
         
       case 'chart':
-        sql = `CREATE OR REPLACE VIEW ${qualifiedViewName} AS
-               SELECT ${panel.x}, ${panel.y}
-               FROM ${panel.source}
-               ORDER BY ${panel.x}`;
+        if (panel.x && panel.y) {
+          sql = `CREATE OR REPLACE VIEW ${qualifiedViewName} AS
+                 SELECT ${panel.x}, ${panel.y}
+                 FROM ${sourceView}
+                 ORDER BY ${panel.x}`;
+        } else {
+          sql = `CREATE OR REPLACE VIEW ${qualifiedViewName} AS
+                 SELECT * FROM ${sourceView}
+                 LIMIT 100`;
+        }
         break;
         
       case 'table':
-        sql = `CREATE OR REPLACE VIEW ${qualifiedViewName} AS
-               SELECT * FROM ${panel.source}
-               ORDER BY ${panel.metric} DESC
-               LIMIT ${panel.top_n || 100}`;
+        if (panel.group_by && panel.group_by.length > 0) {
+          const groupCols = panel.group_by.join(', ');
+          sql = `CREATE OR REPLACE VIEW ${qualifiedViewName} AS
+                 SELECT ${groupCols}, 
+                        COUNT(*) AS ${panel.metric || 'COUNT'}
+                 FROM ${sourceView}
+                 GROUP BY ${groupCols}
+                 ORDER BY ${panel.metric || 'COUNT'} DESC
+                 LIMIT ${panel.top_n || 100}`;
+        } else {
+          sql = `CREATE OR REPLACE VIEW ${qualifiedViewName} AS
+                 SELECT * FROM ${sourceView}
+                 ORDER BY ${panel.metric || '1'} DESC
+                 LIMIT ${panel.top_n || 100}`;
+        }
         break;
         
       default:
         sql = `CREATE OR REPLACE VIEW ${qualifiedViewName} AS
-               SELECT * FROM ${panel.source}
+               SELECT * FROM ${sourceView}
                LIMIT 100`;
     }
 

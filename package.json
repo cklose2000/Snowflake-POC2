@@ -7,7 +7,9 @@
     "start": "node src/server.js",
     "setup": "node scripts/setup.js",
     "validate": "node scripts/validate.js",
-    "test": "node tests/integration/test-dashboard.js"
+    "test": "node tests/integration/test-dashboard.js",
+    "codegen": "node scripts/codegen-schema.js",
+    "prestart": "npm run codegen"
   },
   "dependencies": {
     "express": "^4.18.0",

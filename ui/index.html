@@ -324,10 +324,15 @@
             messages.push({ role: 'user', content: message });
             
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
+                const payload = {
                     type: 'chat',
                     message: message
-                }));
+                };
+                console.log('Sending message:', payload);
+                ws.send(JSON.stringify(payload));
+            } else {
+                console.error('WebSocket not connected. State:', ws ? ws.readyState : 'null');
+                addMessage('Error: WebSocket not connected', 'system');
             }
             
             input.value = '';

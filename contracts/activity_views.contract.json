@@ -1,0 +1,60 @@
+{
+  "version": "1.0.0",
+  "db": "CLAUDE_BI",
+  "schemas": {
+    "ACTIVITY": "ACTIVITY",
+    "ACTIVITY_CCODE": "ACTIVITY_CCODE",
+    "ANALYTICS": "ANALYTICS"
+  },
+  "tables": {
+    "ACTIVITY": {
+      "EVENTS": {
+        "columns": [
+          "ACTIVITY_ID",
+          "TS",
+          "CUSTOMER",
+          "ACTIVITY",
+          "FEATURE_JSON",
+          "ANONYMOUS_CUSTOMER_ID",
+          "REVENUE_IMPACT",
+          "LINK",
+          "_SOURCE_SYSTEM",
+          "_SOURCE_VERSION",
+          "_SESSION_ID",
+          "_QUERY_TAG",
+          "_ACTIVITY_OCCURRENCE",
+          "_ACTIVITY_REPEATED_AT"
+        ]
+      }
+    },
+    "ACTIVITY_CCODE": {
+      "ARTIFACTS": {
+        "columns": [
+          "ARTIFACT_ID",
+          "SAMPLE",
+          "ROW_COUNT",
+          "SCHEMA_JSON",
+          "S3_URL",
+          "BYTES",
+          "CREATED_TS",
+          "CUSTOMER",
+          "CREATED_BY_ACTIVITY"
+        ]
+      }
+    }
+  },
+  "views": {
+    "ACTIVITY_CCODE": {
+      "VW_ACTIVITY_COUNTS_24H": {
+        "columns": ["HOUR", "ACTIVITY", "EVENT_COUNT", "UNIQUE_CUSTOMERS"],
+        "source": "ACTIVITY.EVENTS",
+        "description": "Hourly activity counts for the last 24 hours"
+      },
+      "VW_ACTIVITY_SUMMARY": {
+        "columns": ["TOTAL_EVENTS", "UNIQUE_CUSTOMERS", "UNIQUE_ACTIVITIES", "LAST_EVENT"],
+        "source": "ACTIVITY.EVENTS",
+        "description": "Summary statistics for the last 24 hours"
+      }
+    }
+  }
+}
