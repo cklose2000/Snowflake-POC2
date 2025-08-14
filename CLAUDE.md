@@ -2,6 +2,23 @@
 
 **READ THIS FIRST**: This file defines strict behavioral requirements for Claude Code when working on this project. Violation of these guidelines wastes time and introduces risk.
 
+## 🎯 MCP INTEGRATION - PRIMARY DATA ACCESS METHOD
+
+**CRITICAL**: This project now uses MCP (Model Context Protocol) for all data operations. 
+
+### ✅ USE MCP TOOLS FOR ALL QUERIES
+- **compose_query_plan** - Execute queries and get results
+- **list_sources** - List available data sources
+- **validate_plan** - Validate query plans
+- **create_dashboard** - Generate dashboards
+
+### ❌ NEVER ACCESS SNOWFLAKE DIRECTLY
+- Do NOT write raw SQL
+- Do NOT use snowflake-sdk
+- Do NOT access credentials
+
+See `claude-config/CLAUDE_MCP.md` for detailed MCP usage guidelines.
+
 ## 🔒 SNOWFLAKE CONNECTION - ABSOLUTE REQUIREMENTS
 
 ### ✅ ALWAYS DO THIS

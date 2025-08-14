@@ -1,0 +1,16 @@
+# Claude Code MCP Configuration
+# This configures Claude Code to use the Snowflake MCP server
+
+[mcp.servers.snowflake-query]
+command = "node"
+args = ["../mcp-server/dist/index.js"]
+env = { 
+  "NODE_ENV" = "production",
+  "SNOWFLAKE_ACCOUNT" = "${SNOWFLAKE_ACCOUNT}",
+  "SNOWFLAKE_USERNAME" = "${SNOWFLAKE_USERNAME}",
+  "SNOWFLAKE_PASSWORD" = "${SNOWFLAKE_PASSWORD}",
+  "SNOWFLAKE_DATABASE" = "CLAUDE_BI",
+  "SNOWFLAKE_SCHEMA" = "ANALYTICS",
+  "SNOWFLAKE_WAREHOUSE" = "CLAUDE_WAREHOUSE",
+  "SNOWFLAKE_ROLE" = "CLAUDE_BI_ROLE"
+}

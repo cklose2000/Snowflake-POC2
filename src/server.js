@@ -291,6 +291,7 @@ async function handleChatMessage(ws, data) {
   const message = data.message.toLowerCase();
   
   try {
+    console.log('Processing NL query:', message);
     let sql = '';
     let queryType = '';
     
@@ -316,13 +317,17 @@ async function handleChatMessage(ws, data) {
       sql = `SELECT * FROM ${GeneratedSchema.fqn('ACTIVITY_CCODE', 'VW_ACTIVITY_SUMMARY')}`;
       queryType = 'metrics';
       
-    } else if (message.includes('recent') || message.includes('latest')) {
-      // Recent events
+    } else if (message.includes('recent') || message.includes('latest') || 
+               (message.includes('last') && message.includes('event'))) {
+      // Recent events - extract number if specified
+      const numberMatch = message.match(/\d+/);
+      const limit = numberMatch ? parseInt(numberMatch[0]) : 20;
+      
       sql = `
         SELECT activity_id, ts, customer, activity
         FROM ${GeneratedSchema.fqn('ACTIVITY', 'EVENTS')}
         ORDER BY ts DESC
-        LIMIT 20
+        LIMIT ${limit}
       `;
       queryType = 'feed';
       
@@ -338,7 +343,9 @@ async function handleChatMessage(ws, data) {
     }
     
     // Execute the query
+    console.log('Executing SQL:', sql);
     const result = await SnowflakeClient.execute(snowflakeConn, sql);
+    console.log('Query returned', result.rows?.length || 0, 'rows');
     
     // Log the SQL execution
     await activityLogger.log('sql_executed', {
