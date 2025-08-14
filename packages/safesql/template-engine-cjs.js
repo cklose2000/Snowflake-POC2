@@ -1,5 +1,6 @@
 // SafeSQL Template Engine - CommonJS version
 const snowflake = require('snowflake-sdk');
+const { fqn, qualifySource, createActivityName, SCHEMAS, TABLES, ACTIVITY_VIEW_MAP, DB } = require('../snowflake-schema/generated.js');
 
 class SafeSQLTemplateEngine {
   constructor(connection) {
@@ -16,7 +17,7 @@ class SafeSQLTemplateEngine {
 
       sample_top: {
         // Using fully qualified name directly since IDENTIFIER() with bind doesn't work
-        sql: `SELECT * FROM ACTIVITY.EVENTS ORDER BY TS DESC LIMIT ?`,
+        sql: `SELECT * FROM ${fqn('ACTIVITY', TABLES.ACTIVITY.EVENTS)} ORDER BY TS DESC LIMIT ?`,
         params: ['limit'],
         maxRows: 1000,
         allowSelectStar: true,
@@ -30,7 +31,7 @@ class SafeSQLTemplateEngine {
       recent_activities: {
         sql: `SELECT activity_id, ts, customer, activity, 
                      TO_VARCHAR(feature_json) as feature_json, _source_system
-              FROM ACTIVITY.EVENTS
+              FROM ${fqn('ACTIVITY', TABLES.ACTIVITY.EVENTS)}
               WHERE ts > DATEADD('hour', -?, CURRENT_TIMESTAMP())
               ORDER BY ts DESC
               LIMIT ?`,
@@ -47,7 +48,7 @@ class SafeSQLTemplateEngine {
       activity_by_type: {
         sql: `SELECT activity, COUNT(*) as count, 
                      MIN(ts) as first_seen, MAX(ts) as last_seen
-              FROM ACTIVITY.EVENTS
+              FROM ${fqn('ACTIVITY', TABLES.ACTIVITY.EVENTS)}
               WHERE ts > DATEADD('hour', -?, CURRENT_TIMESTAMP())
               GROUP BY activity
               ORDER BY count DESC`,
@@ -67,7 +68,7 @@ class SafeSQLTemplateEngine {
                 COUNT(DISTINCT activity) as unique_activities,
                 MIN(ts) as earliest_event,
                 MAX(ts) as latest_event
-              FROM ACTIVITY.EVENTS
+              FROM ${fqn('ACTIVITY', TABLES.ACTIVITY.EVENTS)}
               WHERE ts > DATEADD('hour', -?, CURRENT_TIMESTAMP())`,
         params: ['hours'],
         maxRows: 1,
@@ -137,19 +138,21 @@ class SafeSQLTemplateEngine {
 
   async logActivity(template, params) {
     const activityId = `act_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const sql = `INSERT INTO ACTIVITY.EVENTS (
+    const eventsTable = fqn('ACTIVITY', TABLES.ACTIVITY.EVENTS);
+    const sql = `INSERT INTO ${eventsTable} (
       activity_id, ts, customer, activity, feature_json, _source_system
     ) SELECT
       ?,
       CURRENT_TIMESTAMP(),
       ?,
-      'ccode.sql_executed',
+      ?,
       PARSE_JSON(?),
       'safesql_engine'`;
 
     const binds = [
       activityId,
       params.customer || 'safesql_engine',
+      createActivityName('sql_executed'),
       JSON.stringify({
         template: template,
         params: params,

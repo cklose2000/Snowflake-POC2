@@ -20,10 +20,21 @@
     "validate-schema": "node scripts/validate-schema.js",
     "bootstrap-schema": "node scripts/run-bootstrap.js",
     "bootstrap-activity-views": "node scripts/run-activity-views.js",
-    "lint:schemas": "eslint . --rule 'no-hardcoded-schemas: error'"
+    "lint:schemas": "eslint . --rule 'no-hardcoded-schemas: error'",
+    "codegen": "node scripts/codegen-schema.js",
+    "prebuild": "npm run codegen",
+    "build": "echo 'Build process goes here'",
+    "lint:contract": "node scripts/lint-contract-compliance.js",
+    "validate:runtime": "node scripts/validate-runtime-schema.js",
+    "validate:runtime:strict": "node scripts/validate-runtime-schema.js --strict",
+    "validate:runtime:fix": "node scripts/validate-runtime-schema.js --generate-fix",
+    "test:contract": "node test/contract-compliance.test.js",
+    "test:all": "npm run test:contract && npm run lint:contract",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "concurrently": "^7.6.0"
+    "concurrently": "^7.6.0",
+    "husky": "^9.1.7"
   },
   "dependencies": {
     "node-fetch": "^3.3.2"

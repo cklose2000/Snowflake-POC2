@@ -3,13 +3,23 @@
 
 const snowflake = require('snowflake-sdk');
 const crypto = require('crypto');
+const { 
+  fqn, 
+  SCHEMAS, 
+  TABLES, 
+  ACTIVITY_NAMESPACE,
+  createActivityName 
+} = require('../snowflake-schema/generated.js');
 
 class DashboardActivityLogger {
   constructor(snowflakeConnection) {
     this.snowflake = snowflakeConnection;
-    this.namespace = 'ccode';
+    this.namespace = ACTIVITY_NAMESPACE;
     this.sourceSystem = 'dashboard_factory';
     this.sourceVersion = '1.0.0';
+    
+    // Cache the fully qualified table name
+    this.eventsTable = fqn(SCHEMAS.ACTIVITY, TABLES.ACTIVITY.EVENTS);
   }
 
   // Generate unique activity ID
@@ -33,7 +43,7 @@ class DashboardActivityLogger {
 
     return await this.logActivity({
       activityId,
-      activity: `${this.namespace}.dashboard_creation_started`,
+      activity: createActivityName('dashboard_creation_started'),
       customer: this.getCurrentUser(),
       featureJson,
       link: null
@@ -59,7 +69,7 @@ class DashboardActivityLogger {
 
     return await this.logActivity({
       activityId,
-      activity: `${this.namespace}.dashboard_created`,
+      activity: createActivityName('dashboard_created'),
       customer: this.getCurrentUser(),
       featureJson,
       link: streamlitUrl
@@ -79,7 +89,7 @@ class DashboardActivityLogger {
 
     return await this.logActivity({
       activityId,
-      activity: `${this.namespace}.dashboard_refreshed`,
+      activity: createActivityName('dashboard_refreshed'),
       customer: this.getCurrentUser(),
       featureJson,
       link: null
@@ -99,7 +109,7 @@ class DashboardActivityLogger {
 
     return await this.logActivity({
       activityId,
-      activity: `${this.namespace}.dashboard_destroyed`,
+      activity: createActivityName('dashboard_destroyed'),
       customer: this.getCurrentUser(),
       featureJson,
       link: null
@@ -121,7 +131,7 @@ class DashboardActivityLogger {
 
     return await this.logActivity({
       activityId,
-      activity: `${this.namespace}.dashboard_failed`,
+      activity: createActivityName('dashboard_failed'),
       customer: this.getCurrentUser(),
       featureJson,
       link: null
@@ -145,7 +155,7 @@ class DashboardActivityLogger {
 
     return await this.logActivity({
       activityId,
-      activity: `${this.namespace}.dashboard_preflight_${results.passed ? 'passed' : 'failed'}`,
+      activity: createActivityName(`dashboard_preflight_${results.passed ? 'passed' : 'failed'}`),
       customer: this.getCurrentUser(),
       featureJson,
       link: null
@@ -159,7 +169,7 @@ class DashboardActivityLogger {
     // Map old format to new format
     return await this.logActivity({
       activityId,
-      activity: activity || 'ccode.dashboard_event',
+      activity: activity || createActivityName('dashboard_event'),
       customer: customer || this.getCurrentUser(),
       featureJson: feature_json || {},
       link: link || null
@@ -173,9 +183,9 @@ class DashboardActivityLogger {
       ? featureJson 
       : JSON.stringify(featureJson || {});
     
-    // Use parameter binds to prevent SQL injection
+    // Use positional parameter binds (? placeholders) for Snowflake SDK
     const sql = `
-      INSERT INTO CLAUDE_BI.ACTIVITY.EVENTS (
+      INSERT INTO ${this.eventsTable} (
         activity_id,
         ts,
         customer,
@@ -188,28 +198,29 @@ class DashboardActivityLogger {
         _query_tag
       ) 
       SELECT
-        :activity_id,
+        ?,
         CURRENT_TIMESTAMP(),
-        :customer,
-        :activity,
-        PARSE_JSON(:feature_json),
-        :link,
-        :source_system,
-        :source_version,
-        :session_id,
+        ?,
+        ?,
+        PARSE_JSON(?),
+        ?,
+        ?,
+        ?,
+        ?,
         CURRENT_QUERY_TAG()
     `;
 
-    const binds = {
-      activity_id: activityId,
-      customer: customer,
-      activity: activity,
-      feature_json: featureJsonStr,
-      link: link,
-      source_system: this.sourceSystem,
-      source_version: this.sourceVersion,
-      session_id: this.getSessionId()
-    };
+    // Snowflake SDK requires positional binds as an array
+    const binds = [
+      activityId,           // ?1
+      customer,             // ?2
+      activity,             // ?3
+      featureJsonStr,       // ?4
+      link,                 // ?5
+      this.sourceSystem,    // ?6
+      this.sourceVersion,   // ?7
+      this.getSessionId()   // ?8
+    ];
 
     try {
       const result = await new Promise((resolve, reject) => {
@@ -291,19 +302,24 @@ class DashboardActivityLogger {
         activity,
         feature_json,
         link
-      FROM CLAUDE_BI.ACTIVITY.EVENTS
-      WHERE activity LIKE '${this.namespace}.dashboard%'
+      FROM ${this.eventsTable}
+      WHERE activity LIKE ?
     `;
+    
+    const binds = [this.namespace + '.dashboard%'];
 
     if (dashboardName) {
-      sql += ` AND feature_json:spec_id = '${dashboardName}'`;
+      sql += ` AND feature_json:spec_id = ?`;
+      binds.push(dashboardName);
     }
 
-    sql += ` ORDER BY ts DESC LIMIT ${limit}`;
+    sql += ` ORDER BY ts DESC LIMIT ?`;
+    binds.push(limit);
 
     return new Promise((resolve, reject) => {
       this.snowflake.execute({
         sqlText: sql,
+        binds: binds,
         complete: (err, stmt, rows) => {
           if (err) {
             reject(err);
@@ -317,23 +333,35 @@ class DashboardActivityLogger {
 
   // Get dashboard metrics from Activity stream
   async getDashboardMetrics(timeWindow = '24 hours') {
+    const hours = parseInt(timeWindow.replace(/\D/g, '')) || 24;
+    
     const sql = `
       SELECT 
         COUNT(DISTINCT feature_json:spec_id) as unique_dashboards,
-        COUNT(CASE WHEN activity = '${this.namespace}.dashboard_created' THEN 1 END) as created_count,
-        COUNT(CASE WHEN activity = '${this.namespace}.dashboard_refreshed' THEN 1 END) as refresh_count,
-        COUNT(CASE WHEN activity = '${this.namespace}.dashboard_destroyed' THEN 1 END) as destroy_count,
-        COUNT(CASE WHEN activity = '${this.namespace}.dashboard_failed' THEN 1 END) as failure_count,
+        COUNT(CASE WHEN activity = ? THEN 1 END) as created_count,
+        COUNT(CASE WHEN activity = ? THEN 1 END) as refresh_count,
+        COUNT(CASE WHEN activity = ? THEN 1 END) as destroy_count,
+        COUNT(CASE WHEN activity = ? THEN 1 END) as failure_count,
         AVG(feature_json:creation_time_ms) as avg_creation_time_ms,
         SUM(feature_json:objects_created) as total_objects_created
-      FROM CLAUDE_BI.ACTIVITY.EVENTS
-      WHERE activity LIKE '${this.namespace}.dashboard%'
-        AND ts >= DATEADD('hour', -${timeWindow.replace(/\D/g, '')}, CURRENT_TIMESTAMP())
+      FROM ${this.eventsTable}
+      WHERE activity LIKE ?
+        AND ts >= DATEADD('hour', ?, CURRENT_TIMESTAMP())
     `;
+
+    const binds = [
+      this.namespace + '.dashboard_created',
+      this.namespace + '.dashboard_refreshed', 
+      this.namespace + '.dashboard_destroyed',
+      this.namespace + '.dashboard_failed',
+      this.namespace + '.dashboard%',
+      -hours
+    ];
 
     return new Promise((resolve, reject) => {
       this.snowflake.execute({
         sqlText: sql,
+        binds: binds,
         complete: (err, stmt, rows) => {
           if (err) {
             reject(err);

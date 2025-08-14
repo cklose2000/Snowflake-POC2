@@ -1,5 +1,6 @@
 // BI-First Smart Query Router
 // Routes common BI patterns directly to SafeSQL templates for optimal performance
+const { fqn, qualifySource, createActivityName, SCHEMAS, TABLES, ACTIVITY_VIEW_MAP, DB } = require('../snowflake-schema/generated.js');
 
 class BIQueryRouter {
   constructor() {
@@ -90,7 +91,7 @@ class BIQueryRouter {
           tier: 1,
           route: 'direct_safesql',
           template: config.template,
-          params: { ...params, schema: 'ACTIVITY', table: 'EVENTS' },
+          params: { ...params, schema: SCHEMAS.ACTIVITY, table: TABLES.ACTIVITY.EVENTS },
           confidence: 0.95,
           expectedTime: 2000,
           expectedCost: 0.001,
@@ -228,7 +229,7 @@ class BIQueryRouter {
     
     // Log to Activity Schema (will be called by message router)
     return {
-      activity: route.tier === 0 ? 'ccode.dashboard_routed' : 'ccode.query_routed',
+      activity: route.tier === 0 ? createActivityName('dashboard_routed') : createActivityName('query_routed'),
       feature_json: {
         tier: route.tier,
         route_type: route.route,

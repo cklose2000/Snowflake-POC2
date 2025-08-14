@@ -1,5 +1,5 @@
 // Claim Validators - Specific validation logic for different claim types
-export class ClaimValidator {
+class ClaimValidator {
   constructor() {
     this.validators = {
       percentage: this.validatePercentageClaim,
@@ -285,3 +285,5 @@ export class ClaimValidator {
     };
   }
 }
+
+module.exports = { ClaimValidator };

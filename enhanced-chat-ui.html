@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 SnowflakePOC2 - Claude Chat (Enhanced)</title>
+    <style>
+        /* ... existing styles ... */
+        
+        /* Enhanced progress display */
+        .progress-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .progress-modal {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+        
+        .progress-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .progress-icon {
+            width: 40px;
+            height: 40px;
+            margin-right: 15px;
+            animation: spin 2s linear infinite;
+        }
+        
+        @keyframes spin {
+            100% { transform: rotate(360deg); }
+        }
+        
+        .progress-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .progress-steps {
+            margin: 20px 0;
+        }
+        
+        .progress-step {
+            display: flex;
+            align-items: center;
+            padding: 8px 0;
+            opacity: 0.4;
+            transition: opacity 0.3s;
+        }
+        
+        .progress-step.completed {
+            opacity: 1;
+        }
+        
+        .progress-step.active {
+            opacity: 1;
+            font-weight: 500;
+        }
+        
+        .step-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            margin-right: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #e5e5e5;
+            color: white;
+            font-size: 14px;
+        }
+        
+        .step-icon.completed {
+            background: #28a745;
+        }
+        
+        .step-icon.active {
+            background: #007bff;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+        }
+        
+        .progress-bar-enhanced {
+            height: 6px;
+            background: #e5e5e5;
+            border-radius: 3px;
+            margin: 20px 0;
+            overflow: hidden;
+        }
+        
+        .progress-fill-enhanced {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+        
+        .progress-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .connection-status {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+            padding: 5px 10px;
+            border-radius: 20px;
+            background: #f0f0f0;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        
+        .status-dot.connected {
+            background: #28a745;
+            animation: pulse-green 2s infinite;
+        }
+        
+        .status-dot.disconnected {
+            background: #dc3545;
+        }
+        
+        @keyframes pulse-green {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Connection Status Indicator -->
+        <div class="connection-status" id="connectionStatus">
+            <span class="status-dot disconnected" id="statusDot"></span>
+            <span id="statusText">Connecting...</span>
+        </div>
+        
+        <div class="header">
+            <div class="title">🚀 SnowflakePOC2 - Claude Chat</div>
+            <div class="subtitle" id="connectionInfo">Connecting to WebSocket...</div>
+        </div>
+        
+        <div class="chat-container" id="chatContainer">
+            <!-- Messages will appear here -->
+        </div>
+        
+        <!-- Progress Modal -->
+        <div class="progress-overlay" id="progressOverlay">
+            <div class="progress-modal">
+                <div class="progress-header">
+                    <svg class="progress-icon" viewBox="0 0 24 24">
+                        <path fill="#667eea" d="M12,4V2A10,10 0 0,0 2,12H4A8,8 0 0,1 12,4Z"/>
+                    </svg>
+                    <div class="progress-title">Creating Dashboard...</div>
+                </div>
+                
+                <div class="progress-steps" id="progressSteps">
+                    <!-- Steps will be dynamically added -->
+                </div>
+                
+                <div class="progress-bar-enhanced">
+                    <div class="progress-fill-enhanced" id="progressFill" style="width: 0%"></div>
+                </div>
+                
+                <div class="progress-footer">
+                    <span id="progressMessage">Initializing...</span>
+                    <span id="progressTime">0s</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Input area remains the same -->
+        <div class="input-container">
+            <textarea 
+                class="message-input" 
+                id="messageInput" 
+                placeholder="Type your message or SQL command..."
+                rows="3"
+            ></textarea>
+            <button class="send-button" id="sendButton">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let sessionId = `session_${Date.now()}`;
+        let reconnectAttempts = 0;
+        let progressStartTime = null;
+        let progressTimer = null;
+        
+        // Dashboard creation steps
+        const dashboardSteps = [
+            { id: 'analyze_conversation', label: 'Analyzing conversation' },
+            { id: 'generate_spec', label: 'Generating specification' },
+            { id: 'validate_spec', label: 'Validating configuration' },
+            { id: 'preflight_checks', label: 'Running preflight checks' },
+            { id: 'create_objects', label: 'Creating Snowflake objects' },
+            { id: 'generate_streamlit', label: 'Generating dashboard code' },
+            { id: 'deploy_app', label: 'Deploying application' },
+            { id: 'log_completion', label: 'Finalizing' }
+        ];
+        
+        function connectWebSocket() {
+            ws = new WebSocket('ws://localhost:8080');
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                document.getElementById('connectionInfo').textContent = 'Connected';
+                document.getElementById('statusDot').className = 'status-dot connected';
+                document.getElementById('statusText').textContent = 'Connected';
+                reconnectAttempts = 0;
+                
+                // Register session
+                ws.send(JSON.stringify({
+                    type: 'register',
+                    sessionId: sessionId
+                }));
+                
+                addMessage('system', 'Connected to SnowflakePOC2 Bridge');
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                console.log('Received:', data);
+                
+                switch(data.type) {
+                    case 'dashboard.progress':
+                        updateDashboardProgress(data);
+                        break;
+                    case 'dashboard.complete':
+                        completeDashboardCreation(data);
+                        break;
+                    case 'dashboard.error':
+                        dashboardCreationError(data);
+                        break;
+                    case 'claude-response':
+                        addMessage('assistant', data.content);
+                        hideProgress();
+                        break;
+                    case 'sql-result':
+                        displaySQLResult(data);
+                        break;
+                    default:
+                        if (data.content) {
+                            addMessage('system', data.content);
+                        }
+                }
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                document.getElementById('connectionInfo').textContent = 'Disconnected';
+                document.getElementById('statusDot').className = 'status-dot disconnected';
+                document.getElementById('statusText').textContent = 'Disconnected';
+                
+                // Auto-reconnect
+                if (reconnectAttempts < 5) {
+                    reconnectAttempts++;
+                    setTimeout(connectWebSocket, 2000 * reconnectAttempts);
+                    addMessage('system', `Connection lost. Reconnecting (attempt ${reconnectAttempts}/5)...`);
+                } else {
+                    addMessage('error', 'Unable to reconnect. Please refresh the page.');
+                }
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                addMessage('error', 'Connection error occurred');
+            };
+        }
+        
+        function showDashboardProgress() {
+            document.getElementById('progressOverlay').style.display = 'flex';
+            progressStartTime = Date.now();
+            
+            // Initialize steps display
+            const stepsContainer = document.getElementById('progressSteps');
+            stepsContainer.innerHTML = '';
+            dashboardSteps.forEach((step, index) => {
+                const stepDiv = document.createElement('div');
+                stepDiv.className = 'progress-step';
+                stepDiv.id = `step_${step.id}`;
+                stepDiv.innerHTML = `
+                    <div class="step-icon">${index + 1}</div>
+                    <div>${step.label}</div>
+                `;
+                stepsContainer.appendChild(stepDiv);
+            });
+            
+            // Start timer
+            progressTimer = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - progressStartTime) / 1000);
+                document.getElementById('progressTime').textContent = `${elapsed}s`;
+            }, 1000);
+        }
+        
+        function updateDashboardProgress(data) {
+            // Update progress bar
+            document.getElementById('progressFill').style.width = `${data.pct}%`;
+            document.getElementById('progressMessage').textContent = data.message || 'Processing...';
+            
+            // Update step status
+            dashboardSteps.forEach((step, index) => {
+                const stepEl = document.getElementById(`step_${step.id}`);
+                if (!stepEl) return;
+                
+                const stepIndex = dashboardSteps.findIndex(s => s.id === data.step);
+                
+                if (index < stepIndex) {
+                    stepEl.className = 'progress-step completed';
+                    stepEl.querySelector('.step-icon').className = 'step-icon completed';
+                    stepEl.querySelector('.step-icon').innerHTML = '✓';
+                } else if (index === stepIndex) {
+                    stepEl.className = 'progress-step active';
+                    stepEl.querySelector('.step-icon').className = 'step-icon active';
+                } else {
+                    stepEl.className = 'progress-step';
+                    stepEl.querySelector('.step-icon').className = 'step-icon';
+                }
+            });
+        }
+        
+        function completeDashboardCreation(data) {
+            hideProgress();
+            const message = `✅ Dashboard created successfully!
+                Name: ${data.name}
+                URL: ${data.url}
+                Panels: ${data.panels_count}
+                Time: ${(data.elapsed_ms / 1000).toFixed(1)}s`;
+            addMessage('success', message);
+        }
+        
+        function dashboardCreationError(data) {
+            hideProgress();
+            const message = `❌ Dashboard creation failed at step: ${data.step}
+                Error: ${data.error}
+                Time: ${(data.elapsed_ms / 1000).toFixed(1)}s`;
+            addMessage('error', message);
+        }
+        
+        function hideProgress() {
+            document.getElementById('progressOverlay').style.display = 'none';
+            if (progressTimer) {
+                clearInterval(progressTimer);
+                progressTimer = null;
+            }
+        }
+        
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            if (!ws || ws.readyState !== 1) {
+                addMessage('error', 'Not connected. Please wait for reconnection...');
+                return;
+            }
+            
+            // Add user message to chat
+            addMessage('user', message);
+            
+            // Check if this is a dashboard request
+            if (message.toLowerCase().includes('dashboard') || 
+                message.toLowerCase().includes('create') ||
+                message.toLowerCase().includes('show me')) {
+                showDashboardProgress();
+            }
+            
+            // Send via WebSocket
+            ws.send(JSON.stringify({
+                type: 'user-message',
+                sessionId: sessionId,
+                content: message
+            }));
+            
+            input.value = '';
+        }
+        
+        function addMessage(type, content) {
+            const container = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            
+            // Format content based on type
+            if (type === 'sql-result') {
+                messageDiv.innerHTML = content;
+            } else {
+                messageDiv.textContent = content;
+            }
+            
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function displaySQLResult(data) {
+            // ... existing SQL result display code ...
+        }
+        
+        // Initialize
+        connectWebSocket();
+        
+        // Event listeners
+        document.getElementById('sendButton').addEventListener('click', sendMessage);
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

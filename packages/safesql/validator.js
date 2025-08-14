@@ -1,5 +1,7 @@
 // SafeSQL Validator - Ensures only safe SQL patterns are executed
-export class SafeSQLValidator {
+const { fqn, qualifySource, createActivityName, SCHEMAS, TABLES, ACTIVITY_VIEW_MAP, DB } = require('../snowflake-schema/generated.js');
+
+class SafeSQLValidator {
   constructor() {
     this.allowedTemplates = [
       'describe_table',
@@ -14,7 +16,7 @@ export class SafeSQLValidator {
       /\bDROP\s+/i,
       /\bTRUNCATE\s+/i,
       /\bDELETE\s+FROM/i,
-      /\bINSERT\s+INTO(?!.*analytics\.activity)/i, // Allow only activity inserts
+      /\bINSERT\s+INTO(?!.*ACTIVITY)/i, // Allow only activity inserts
       /\bUPDATE\s+/i,
       /\bALTER\s+TABLE/i,
       /\bCREATE\s+(?!.*TEMPORARY)/i, // Allow only temp tables
@@ -171,7 +173,13 @@ export class SafeSQLValidator {
   }
 
   buildSafeQuery(template, params) {
-    // Build query from template with proper escaping
+    // Use parameterized queries instead of string replacement
+    if (template.parameterBuilder) {
+      const binds = template.parameterBuilder(params);
+      return { sql: template.sql, binds };
+    }
+    
+    // Legacy fallback - deprecated
     let sql = template.sql;
     
     for (const [key, value] of Object.entries(params)) {
@@ -183,7 +191,7 @@ export class SafeSQLValidator {
     // Remove conditional blocks that weren't used
     sql = sql.replace(/{{#if\s+\w+}}[\s\S]*?{{\/if}}/g, '');
     
-    return sql;
+    return { sql, binds: [] };
   }
 
   escapeValue(value) {
@@ -209,4 +217,5 @@ export class SafeSQLValidator {
   }
 }
 
-export default SafeSQLValidator;
+module.exports = { SafeSQLValidator };
+module.exports.default = SafeSQLValidator;

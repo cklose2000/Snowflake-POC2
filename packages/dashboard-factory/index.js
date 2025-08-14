@@ -7,11 +7,11 @@ const SpecGenerator = require('./spec-generator');
 const SnowflakeObjectManager = require('./snowflake-objects');
 const StreamlitGenerator = require('./streamlit-generator');
 const ActivityLoggerWrapper = require('./activity-logger-wrapper');
+const { fqn, qualifySource, createActivityName, SCHEMAS, TABLES, ACTIVITY_VIEW_MAP, DB, getContextSQL } = require('../snowflake-schema/generated.js');
 
 class DashboardFactory {
   constructor(snowflakeConnection, options = {}) {
     this.snowflake = snowflakeConnection;
-    this.cfg = require('../snowflake-schema/config');
     this.options = {
       timeout: options.timeout || 300000, // 5 minute timeout
       dryRun: options.dryRun || false,
@@ -47,14 +47,14 @@ class DashboardFactory {
     if (this.sessionInitialized) return;
     
     try {
-      const contextSQL = [
-        this.cfg.getWarehouse() && `USE WAREHOUSE ${this.cfg.getWarehouse()}`,
-        `USE DATABASE ${this.cfg.getDatabase()}`,
-        `USE SCHEMA ${this.cfg.getDefaultSchema()}`,
-        `ALTER SESSION SET QUERY_TAG = '${this.cfg.getQueryTag({ service: 'dashboard-factory' })}'`
-      ].filter(Boolean).join(';\n');
+      // Execute each context statement separately (Snowflake SDK doesn't support multi-statement)
+      const contextStatements = getContextSQL({
+        queryTag: 'dashboard-factory'
+      });
       
-      await this.objectManager.exec(contextSQL, {}, 'Set session context');
+      for (const sql of contextStatements) {
+        await this.objectManager.exec(sql, [], 'Set context');
+      }
       this.sessionInitialized = true;
       console.log('✅ Session context initialized');
     } catch (error) {
@@ -86,7 +86,7 @@ class DashboardFactory {
       
       // Step 2: Generate dashboard specification
       await this.logProgress('generate_spec', creationID, customerID);
-      const spec = await this.specGenerator.generateFromIntent(intent);
+      const spec = this.specGenerator.generateFromIntent(intent);
       
       // Step 3: Validate specification
       await this.logProgress('validate_spec', creationID, customerID);
@@ -267,22 +267,22 @@ class DashboardFactory {
     // Query Activity Schema for dashboard creation events
     const query = `
       SELECT 
-        _feature_json:spec_id::STRING as spec_id,
+        feature_json:spec_id::STRING as spec_id,
         activity,
         customer,
         link as dashboard_url,
         ts as created_at,
-        _feature_json:panels::INTEGER as panels_count,
-        _feature_json:schedule_mode::STRING as schedule_mode
-      FROM analytics.activity.events
-      WHERE activity = 'ccode.dashboard_created'
+        feature_json:panels::INTEGER as panels_count,
+        feature_json:schedule_mode::STRING as schedule_mode
+      FROM ${fqn('ACTIVITY', TABLES.ACTIVITY.EVENTS)}
+      WHERE activity = ?
         AND customer = ?
       ORDER BY ts DESC
     `;
     
     const result = await this.snowflake.execute({
       sqlText: query,
-      binds: [customerID]
+      binds: [createActivityName('dashboard_created'), customerID]
     });
     
     return result.resultSet || [];
@@ -297,7 +297,7 @@ class DashboardFactory {
 
   // Log progress through creation steps
   async logProgress(step, creationID, customerID, metadata = {}) {
-    const activityName = `ccode.dashboard_${step}`;
+    const activityName = createActivityName(`dashboard_${step}`);
     
     await this.activityLogger.logEvent({
       activity: activityName,
@@ -311,7 +311,7 @@ class DashboardFactory {
       },
       source_system: 'claude_code',
       source_version: 'v1.0.0',
-      query_tag: `dashboard_factory_${step}_${creationID}`
+      query_tag: 'dashboard_factory_' + step + '_' + creationID
     });
   }
 

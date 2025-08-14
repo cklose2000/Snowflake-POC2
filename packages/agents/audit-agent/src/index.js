@@ -1,7 +1,8 @@
 // Audit Agent - Verifies success claims automatically
-import snowflake from 'snowflake-sdk';
-import { v4 as uuidv4 } from 'uuid';
-import { ClaimValidator } from './validators.js';
+const snowflake = require('snowflake-sdk');
+const { v4: uuidv4 } = require('uuid');
+const { ClaimValidator } = require('./validators.js');
+const { fqn, qualifySource, createActivityName, SCHEMAS, TABLES, ACTIVITY_VIEW_MAP, DB, getContextSQL } = require('../../snowflake-schema/generated.js');
 
 class AuditAgent {
   constructor() {
@@ -26,8 +27,10 @@ class AuditAgent {
         if (err) {
           reject(err);
         } else {
+          // Set context using generated helpers
+          const contextSQL = getContextSQL({ queryTag: 'audit-agent-init' });
           conn.execute({
-            sqlText: `USE DATABASE ${process.env.SNOWFLAKE_DATABASE}; USE SCHEMA activity_ccode;`,
+            sqlText: contextSQL.join('; '),
             complete: () => resolve(conn)
           });
         }
@@ -230,43 +233,53 @@ class AuditAgent {
   }
 
   async findActualValue(context) {
-    // Query recent metrics from activity stream
+    // Query recent metrics from activity stream using generated helpers
+    const eventsTable = fqn('ACTIVITY', TABLES.ACTIVITY.EVENTS);
     const sql = `
       SELECT TRY_CAST(feature_json:value AS FLOAT) as value
-      FROM analytics.activity.events
+      FROM ${eventsTable}
       WHERE customer = ?
-        AND activity LIKE 'ccode.%'
+        AND activity LIKE ?
         AND ts > DATEADD('minute', -30, CURRENT_TIMESTAMP())
         AND feature_json:metric_type = 'percentage'
       ORDER BY ts DESC
       LIMIT 1
     `;
     
-    const result = await this.executeQuery(sql, [context.customer || 'system']);
+    const result = await this.executeQuery(sql, [
+      context.customer || 'system',
+      createActivityName('%')
+    ]);
     return result.length > 0 ? result[0].VALUE : null;
   }
 
   async checkForIncompleteMarkers(context) {
+    const eventsTable = fqn('ACTIVITY', TABLES.ACTIVITY.EVENTS);
     const sql = `
       SELECT activity, feature_json
-      FROM analytics.activity.events
+      FROM ${eventsTable}
       WHERE customer = ?
         AND ts > DATEADD('hour', -1, CURRENT_TIMESTAMP())
         AND (
-          activity LIKE '%failed%'
-          OR activity LIKE '%error%'
+          activity LIKE ?
+          OR activity LIKE ?
           OR feature_json:status = 'incomplete'
         )
     `;
     
-    const result = await this.executeQuery(sql, [context.customer || 'system']);
+    const result = await this.executeQuery(sql, [
+      context.customer || 'system',
+      createActivityName('%failed%'),
+      createActivityName('%error%')
+    ]);
     return result.map(r => `Incomplete: ${r.ACTIVITY}`);
   }
 
   async checkRequiredArtifacts(context) {
+    const artifactsTable = fqn('ACTIVITY_CCODE', TABLES.ACTIVITY_CCODE.ARTIFACTS);
     const sql = `
       SELECT COUNT(*) as artifact_count
-      FROM analytics.activity_ccode.artifacts
+      FROM ${artifactsTable}
       WHERE customer = ?
         AND created_ts > DATEADD('hour', -1, CURRENT_TIMESTAMP())
     `;
@@ -309,16 +322,17 @@ class AuditAgent {
   }
 
   async measureActualPerformance(context) {
+    const eventsTable = fqn('ACTIVITY', TABLES.ACTIVITY.EVENTS);
     const sql = `
       SELECT 
         AVG(TRY_CAST(feature_json:execution_time_ms AS INTEGER)) as avg_latency,
         COUNT(*) as query_count
-      FROM analytics.activity.events
-      WHERE activity = 'ccode.sql_executed'
+      FROM ${eventsTable}
+      WHERE activity = ?
         AND ts > DATEADD('minute', -5, CURRENT_TIMESTAMP())
     `;
     
-    const result = await this.executeQuery(sql);
+    const result = await this.executeQuery(sql, [createActivityName('sql_executed')]);
     return {
       latency: { value: result[0].AVG_LATENCY || 0, unit: 'ms' },
       throughput: { value: result[0].QUERY_COUNT || 0, unit: 'queries' }
@@ -345,21 +359,26 @@ class AuditAgent {
   }
 
   async checkForSupportingEvidence(context) {
+    const eventsTable = fqn('ACTIVITY', TABLES.ACTIVITY.EVENTS);
     const sql = `
       SELECT COUNT(*) as evidence_count
-      FROM analytics.activity.events
+      FROM ${eventsTable}
       WHERE customer = ?
         AND ts > DATEADD('minute', -30, CURRENT_TIMESTAMP())
-        AND activity NOT LIKE '%audit%'
+        AND activity NOT LIKE ?
     `;
     
-    const result = await this.executeQuery(sql, [context.customer || 'system']);
+    const result = await this.executeQuery(sql, [
+      context.customer || 'system',
+      createActivityName('%audit%')
+    ]);
     return result[0].EVIDENCE_COUNT > 0;
   }
 
   async storeAuditResult(auditData) {
+    const auditResultsTable = fqn('ACTIVITY_CCODE', TABLES.ACTIVITY_CCODE.AUDIT_RESULTS);
     const sql = `
-      INSERT INTO analytics.activity_ccode.audit_results (
+      INSERT INTO ${auditResultsTable} (
         audit_id, activity_id, passed, findings, remediation, customer
       ) VALUES (?, ?, ?, ?, ?, ?)
     `;
@@ -401,4 +420,4 @@ if (process.argv[2]) {
     });
 }
 
-export default AuditAgent;
+module.exports = AuditAgent;

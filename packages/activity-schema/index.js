@@ -1,6 +1,8 @@
 // Activity Schema v2 Logger - Strict compliance with 14-column schema
 // Logs all Dashboard Factory operations as activities for audit and analysis
 
+import { fqn, qualifySource, createActivityName, SCHEMAS, TABLES, ACTIVITY_VIEW_MAP, DB } from '../snowflake-schema/generated.js';
+
 class ActivityLogger {
   constructor(snowflakeConnection) {
     this.snowflake = snowflakeConnection;
@@ -30,36 +32,36 @@ class ActivityLogger {
     // Dashboard Factory activity types
     this.activityTypes = {
       // Dashboard creation pipeline
-      'ccode.dashboard_analyze_conversation': 'Analyzed conversation for dashboard intent',
-      'ccode.dashboard_generate_spec': 'Generated dashboard specification',
-      'ccode.dashboard_validate_spec': 'Validated dashboard specification',
-      'ccode.dashboard_preflight_checks': 'Ran preflight checks for object creation',
-      'ccode.dashboard_create_objects': 'Created Snowflake objects (views/tasks/dynamic tables)',
-      'ccode.dashboard_generate_streamlit': 'Generated Streamlit application code',
-      'ccode.dashboard_deploy_app': 'Deployed Streamlit app to Snowflake',
-      'ccode.dashboard_log_completion': 'Dashboard creation completed successfully',
-      'ccode.dashboard_creation_failed': 'Dashboard creation failed',
+      [createActivityName('dashboard_analyze_conversation')]: 'Analyzed conversation for dashboard intent',
+      [createActivityName('dashboard_generate_spec')]: 'Generated dashboard specification',
+      [createActivityName('dashboard_validate_spec')]: 'Validated dashboard specification',
+      [createActivityName('dashboard_preflight_checks')]: 'Ran preflight checks for object creation',
+      [createActivityName('dashboard_create_objects')]: 'Created Snowflake objects (views/tasks/dynamic tables)',
+      [createActivityName('dashboard_generate_streamlit')]: 'Generated Streamlit application code',
+      [createActivityName('dashboard_deploy_app')]: 'Deployed Streamlit app to Snowflake',
+      [createActivityName('dashboard_log_completion')]: 'Dashboard creation completed successfully',
+      [createActivityName('dashboard_creation_failed')]: 'Dashboard creation failed',
       
       // Dashboard management
-      'ccode.dashboard_created': 'Dashboard successfully created and deployed',
-      'ccode.dashboard_destroyed': 'Dashboard and all objects removed',
-      'ccode.dashboard_accessed': 'Dashboard accessed by user',
-      'ccode.dashboard_refreshed': 'Dashboard data refreshed',
+      [createActivityName('dashboard_created')]: 'Dashboard successfully created and deployed',
+      [createActivityName('dashboard_destroyed')]: 'Dashboard and all objects removed',
+      [createActivityName('dashboard_accessed')]: 'Dashboard accessed by user',
+      [createActivityName('dashboard_refreshed')]: 'Dashboard data refreshed',
       
       // Object operations
-      'ccode.snowflake_object_created': 'Snowflake object created (view/task/dynamic table)',
-      'ccode.snowflake_object_dropped': 'Snowflake object removed',
-      'ccode.preflight_check_passed': 'Preflight check passed',
-      'ccode.preflight_check_failed': 'Preflight check failed',
+      [createActivityName('snowflake_object_created')]: 'Snowflake object created (view/task/dynamic table)',
+      [createActivityName('snowflake_object_dropped')]: 'Snowflake object removed',
+      [createActivityName('preflight_check_passed')]: 'Preflight check passed',
+      [createActivityName('preflight_check_failed')]: 'Preflight check failed',
       
       // Spec operations
-      'ccode.spec_generated': 'Dashboard spec generated from intent',
-      'ccode.spec_validated': 'Dashboard spec passed validation',
-      'ccode.spec_validation_failed': 'Dashboard spec failed validation',
+      [createActivityName('spec_generated')]: 'Dashboard spec generated from intent',
+      [createActivityName('spec_validated')]: 'Dashboard spec passed validation',
+      [createActivityName('spec_validation_failed')]: 'Dashboard spec failed validation',
       
       // Intent analysis
-      'ccode.intent_detected': 'Dashboard intent detected in conversation',
-      'ccode.intent_rejected': 'No dashboard intent found in conversation'
+      [createActivityName('intent_detected')]: 'Dashboard intent detected in conversation',
+      [createActivityName('intent_rejected')]: 'No dashboard intent found in conversation'
     };
   }
 
@@ -136,13 +138,14 @@ class ActivityLogger {
   // Get activity occurrence count for customer
   async getActivityOccurrence(customer, activity) {
     try {
-      const query = `
-        SELECT 
-          COUNT(*) as occurrence_count,
-          MAX(ts) as previous_ts
-        FROM analytics.activity.events
-        WHERE customer = ? AND activity = ?
-      `;
+      const eventsTable = fqn(SCHEMAS.ACTIVITY, TABLES.ACTIVITY.EVENTS);
+      const query = [
+        'SELECT',
+        '  COUNT(*) as occurrence_count,',
+        '  MAX(ts) as previous_ts',
+        'FROM ' + eventsTable,
+        'WHERE customer = ? AND activity = ?'
+      ].join('\n');
       
       const result = await this.snowflake.execute({
         sqlText: query,
@@ -166,14 +169,15 @@ class ActivityLogger {
 
   // Insert activity record into Snowflake
   async insertActivity(record) {
-    const insertSQL = `
-      INSERT INTO analytics.activity.events (
-        activity_id, ts, customer, activity, feature_json,
-        anonymous_customer_id, revenue_impact, link,
-        _source_system, _source_version, _session_id, _query_tag,
-        _activity_occurrence, _activity_repeated_at
-      ) VALUES (?, ?, ?, ?, PARSE_JSON(?), ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+    const eventsTable = fqn(SCHEMAS.ACTIVITY, TABLES.ACTIVITY.EVENTS);
+    const insertSQL = [
+      'INSERT INTO ' + eventsTable + ' (',
+      '  activity_id, ts, customer, activity, feature_json,',
+      '  anonymous_customer_id, revenue_impact, link,',
+      '  _source_system, _source_version, _session_id, _query_tag,',
+      '  _activity_occurrence, _activity_repeated_at',
+      ') VALUES (?, ?, ?, ?, PARSE_JSON(?), ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ].join('\n');
     
     const binds = [
       record.activity_id,
@@ -202,7 +206,7 @@ class ActivityLogger {
 
   // Log dashboard creation pipeline step
   async logDashboardStep(step, creationId, customerID, metadata = {}) {
-    const activityName = `ccode.dashboard_${step}`;
+    const activityName = createActivityName(`dashboard_${step}`);
     
     await this.logEvent({
       activity: activityName,
@@ -222,7 +226,7 @@ class ActivityLogger {
   // Log successful dashboard creation
   async logDashboardCreated(dashboardDetails, customerID, sessionID) {
     await this.logEvent({
-      activity: 'ccode.dashboard_created',
+      activity: createActivityName('dashboard_created'),
       customer: customerID,
       session_id: sessionID,
       link: dashboardDetails.url,
@@ -241,7 +245,7 @@ class ActivityLogger {
   // Log dashboard access/usage
   async logDashboardAccess(dashboardUrl, customerID, sessionID, accessMetadata = {}) {
     await this.logEvent({
-      activity: 'ccode.dashboard_accessed',
+      activity: createActivityName('dashboard_accessed'),
       customer: customerID,
       session_id: sessionID,
       link: dashboardUrl,
@@ -258,7 +262,7 @@ class ActivityLogger {
   // Log Snowflake object creation
   async logObjectCreation(objectName, objectType, customerID, sessionID, metadata = {}) {
     await this.logEvent({
-      activity: 'ccode.snowflake_object_created',
+      activity: createActivityName('snowflake_object_created'),
       customer: customerID,
       session_id: sessionID,
       feature_json: {
@@ -274,7 +278,7 @@ class ActivityLogger {
 
   // Log spec generation and validation
   async logSpecOperation(operation, specData, customerID, sessionID) {
-    const activityName = `ccode.spec_${operation}`;
+    const activityName = createActivityName(`spec_${operation}`);
     
     await this.logEvent({
       activity: activityName,
@@ -294,8 +298,8 @@ class ActivityLogger {
   // Log conversation analysis results
   async logIntentAnalysis(analysisResult, customerID, sessionID) {
     const activityName = analysisResult.isDashboardRequest 
-      ? 'ccode.intent_detected' 
-      : 'ccode.intent_rejected';
+      ? createActivityName('intent_detected') 
+      : createActivityName('intent_rejected');
     
     await this.logEvent({
       activity: activityName,
@@ -315,25 +319,26 @@ class ActivityLogger {
 
   // Query activities for dashboard analytics
   async getDashboardAnalytics(customerID, timeRange = '7 days') {
-    const query = `
-      SELECT 
-        activity,
-        COUNT(*) as activity_count,
-        COUNT(DISTINCT customer) as unique_customers,
-        AVG(_activity_occurrence) as avg_occurrence,
-        MIN(ts) as first_activity,
-        MAX(ts) as latest_activity
-      FROM analytics.activity.events
-      WHERE customer = ?
-        AND activity LIKE 'ccode.dashboard_%'
-        AND ts >= CURRENT_TIMESTAMP - INTERVAL '${timeRange}'
-      GROUP BY activity
-      ORDER BY activity_count DESC
-    `;
+    const eventsTable = fqn(SCHEMAS.ACTIVITY, TABLES.ACTIVITY.EVENTS);
+    const query = [
+      'SELECT',
+      '  activity,',
+      '  COUNT(*) as activity_count,',
+      '  COUNT(DISTINCT customer) as unique_customers,',
+      '  AVG(_activity_occurrence) as avg_occurrence,',
+      '  MIN(ts) as first_activity,',
+      '  MAX(ts) as latest_activity',
+      'FROM ' + eventsTable,
+      'WHERE customer = ?',
+      '  AND activity LIKE \'ccode.dashboard_%\'',
+      '  AND ts >= CURRENT_TIMESTAMP - INTERVAL ?',
+      'GROUP BY activity',
+      'ORDER BY activity_count DESC'
+    ].join('\n');
     
     const result = await this.snowflake.execute({
       sqlText: query,
-      binds: [customerID]
+      binds: [customerID, timeRange]
     });
     
     return result.resultSet || [];
@@ -341,29 +346,35 @@ class ActivityLogger {
 
   // Query dashboard creation funnel
   async getDashboardCreationFunnel(timeRange = '30 days') {
-    const query = `
-      WITH funnel_steps AS (
-        SELECT 
-          customer,
-          feature_json:creation_id::STRING as creation_id,
-          activity,
-          ts,
-          ROW_NUMBER() OVER (PARTITION BY customer, feature_json:creation_id ORDER BY ts) as step_order
-        FROM analytics.activity.events
-        WHERE activity LIKE 'ccode.dashboard_%'
-          AND ts >= CURRENT_TIMESTAMP - INTERVAL '${timeRange}'
-      )
-      SELECT 
-        activity,
-        COUNT(*) as attempts,
-        COUNT(DISTINCT customer) as unique_customers,
-        AVG(step_order) as avg_step_position
-      FROM funnel_steps
-      GROUP BY activity
-      ORDER BY avg_step_position
-    `;
+    const eventsTable = fqn(SCHEMAS.ACTIVITY, TABLES.ACTIVITY.EVENTS);
+    const query = [
+      'WITH funnel_steps AS (',
+      '  SELECT',
+      '    customer,',
+      '    feature_json:creation_id::STRING as creation_id,',
+      '    activity,',
+      '    ts,',
+      '    ROW_NUMBER() OVER (PARTITION BY customer, feature_json:creation_id ORDER BY ts) as step_order',
+      '  FROM ' + eventsTable,
+      '  WHERE activity LIKE \'ccode.dashboard_%\'',
+      '    AND ts >= CURRENT_TIMESTAMP - INTERVAL ?',
+      ')',
+      'SELECT',
+      '  activity,',
+      '  COUNT(*) as attempts,',
+      '  COUNT(DISTINCT customer) as unique_customers,',
+      '  AVG(step_order) as avg_step_position',
+      'FROM funnel_steps',
+      'GROUP BY activity',
+      'ORDER BY avg_step_position'
+    ].join('\n');
     
-    const result = await this.snowflake.execute({ sqlText: query });
+    // Convert timeRange string to interval format
+    const intervalValue = timeRange || '30 days';
+    const result = await this.snowflake.execute({ 
+      sqlText: query,
+      binds: [intervalValue]
+    });
     return result.resultSet || [];
   }
 
@@ -417,4 +428,5 @@ class ActivityLogger {
   }
 }
 
-module.exports = ActivityLogger;
+export default ActivityLogger;
+export { ActivityLogger };

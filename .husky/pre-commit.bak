@@ -1,0 +1,70 @@
+#!/usr/bin/env sh
+# Pre-commit hook: Schema Contract Enforcement
+# Prevents schema drift by blocking commits that violate the contract
+
+echo "🔍 Running schema contract validation..."
+
+# 1. Forbid raw 3-part identifiers outside config files
+echo "Checking for raw FQN violations..."
+RAW_FQNS=$(git diff --cached -U0 --name-only | xargs grep -l '\b[A-Za-z0-9_]\+\.[A-Za-z0-9_]\+\.[A-Za-z0-9_]\+' 2>/dev/null | grep -v 'packages/snowflake-schema/generated.js' | grep -v '.sql$' | grep -v '.md$' | grep -v '.yml$' | grep -v '.json$' | grep -v 'test/' || true)
+
+if [ -n "$RAW_FQNS" ]; then
+  echo "❌ Raw FQN detected in:" 
+  echo "$RAW_FQNS" | sed 's/^/   /'
+  echo ""
+  echo "💡 Use fqn() or qualifySource() helpers from packages/snowflake-schema/generated.js"
+  echo "   Example: qualifySource('VW_ACTIVITY_COUNTS_24H')"
+  exit 1
+fi
+
+# 2. Forbid unqualified VW_* references in application code
+echo "Checking for unqualified view references..."
+UNQUALIFIED_VIEWS=$(git diff --cached -U0 --name-only | xargs grep -l '\bVW_[A-Z0-9_]\+' 2>/dev/null | xargs grep -H '\bVW_[A-Z0-9_]\+' | grep -v 'ACTIVITY_CCODE\.' | grep -v '.sql$' | grep -v '.md$' | grep -v '.yml$' | grep -v '.json$' | grep -v 'generated.js' | grep -v 'test/' || true)
+
+if [ -n "$UNQUALIFIED_VIEWS" ]; then
+  echo "❌ Unqualified view reference detected:"
+  echo "$UNQUALIFIED_VIEWS" | sed 's/^/   /'
+  echo ""
+  echo "💡 Use ACTIVITY_CCODE.VW_* or qualifySource() helper"
+  echo "   Example: ACTIVITY_CCODE.VW_ACTIVITY_COUNTS_24H"
+  exit 1
+fi
+
+# 3. Check for SQL injection patterns
+echo "Checking for SQL injection vulnerabilities..."
+SQL_INJECTION=$(git diff --cached -U0 --name-only | xargs grep -l '\${[^}]\+}' 2>/dev/null | xargs grep -H '\${[^}]\+}' | grep -v 'test' | grep -v '.md$' || true)
+
+if [ -n "$SQL_INJECTION" ]; then
+  echo "❌ Potential SQL injection pattern detected:"
+  echo "$SQL_INJECTION" | sed 's/^/   /'
+  echo ""
+  echo "💡 Use parameterized queries with ? placeholders and binds array"
+  echo "   Example: SELECT * FROM table WHERE id = ? (with binds: [userId])"
+  exit 1
+fi
+
+# 4. Ensure generated files are in sync with contract
+echo "Checking contract synchronization..."
+ORIGINAL_HASH=$(node -e "console.log(require('./packages/snowflake-schema/generated.js').CONTRACT_HASH)")
+npm run codegen --silent
+NEW_HASH=$(node -e "console.log(require('./packages/snowflake-schema/generated.js').CONTRACT_HASH)")
+
+if [ "$ORIGINAL_HASH" != "$NEW_HASH" ]; then
+  echo "❌ Generated schema files are out of sync with contract"
+  echo "   Original: $ORIGINAL_HASH"
+  echo "   New:      $NEW_HASH"
+  echo ""
+  echo "💡 Run 'npm run codegen' and commit the updated generated.js file"
+  exit 1
+fi
+
+# 5. Validate that modified files don't break the build
+echo "Validating build integrity..."
+if ! npm run codegen --silent; then
+  echo "❌ Code generation failed"
+  echo "💡 Fix the contract schema or generation script"
+  exit 1
+fi
+
+echo "✅ All schema contract validations passed"
+echo ""

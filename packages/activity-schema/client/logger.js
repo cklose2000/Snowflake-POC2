@@ -1,5 +1,6 @@
 // Activity Schema 2.0 Client Logger
 import { v4 as uuidv4 } from 'uuid';
+import { fqn, qualifySource, createActivityName, SCHEMAS, TABLES, ACTIVITY_VIEW_MAP, DB } from '../../snowflake-schema/generated.js';
 
 export class ActivityLogger {
   constructor(connection, config = {}) {
@@ -50,7 +51,7 @@ export class ActivityLogger {
   ensureNamespace(activity) {
     // Ensure all activities are properly namespaced
     if (!activity.includes('.')) {
-      return `ccode.${activity}`;
+      return createActivityName(activity);
     }
     return activity;
   }
@@ -70,12 +71,13 @@ export class ActivityLogger {
 
   async getActivityOccurrence(activity, customer) {
     // Calculate which occurrence this is for the customer
-    const sql = `
-      SELECT COUNT(*) + 1 as occurrence
-      FROM analytics.activity.events
-      WHERE customer = ?
-        AND activity = ?
-    `;
+    const eventsTable = fqn(SCHEMAS.ACTIVITY, TABLES.ACTIVITY.EVENTS);
+    const sql = [
+      'SELECT COUNT(*) + 1 as occurrence',
+      'FROM ' + eventsTable,
+      'WHERE customer = ?',
+      '  AND activity = ?'
+    ].join('\n');
     
     try {
       const result = await this.executeQuery(sql, [customer, activity]);
@@ -92,14 +94,16 @@ export class ActivityLogger {
     const events = this.queue.splice(0, this.batchSize);
     
     try {
-      const sql = `
-        INSERT INTO analytics.activity.events (
-          activity_id, ts, customer, activity, feature_json,
-          revenue_impact, link, anonymous_customer_id,
-          _source_system, _source_version, _session_id,
-          _query_tag, _activity_occurrence
-        ) VALUES ${events.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}
-      `;
+      const eventsTable = fqn(SCHEMAS.ACTIVITY, TABLES.ACTIVITY.EVENTS);
+      const placeholders = events.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const sql = [
+        'INSERT INTO ' + eventsTable + ' (',
+        '  activity_id, ts, customer, activity, feature_json,',
+        '  revenue_impact, link, anonymous_customer_id,',
+        '  _source_system, _source_version, _session_id,',
+        '  _query_tag, _activity_occurrence',
+        ') VALUES ' + placeholders
+      ].join('\n');
 
       const values = events.flatMap(event => [
         event.activity_id, event.ts, event.customer, event.activity,
@@ -148,28 +152,28 @@ export class ActivityLogger {
 // Standard activity types for Activity Schema 2.0
 export const ActivityTypes = {
   // User interactions
-  USER_ASKED: 'ccode.user_asked',
-  USER_FEEDBACK: 'ccode.user_feedback',
+  USER_ASKED: createActivityName('user_asked'),
+  USER_FEEDBACK: createActivityName('user_feedback'),
   
   // SQL operations
-  SQL_EXECUTED: 'ccode.sql_executed',
-  SQL_FAILED: 'ccode.sql_failed',
+  SQL_EXECUTED: createActivityName('sql_executed'),
+  SQL_FAILED: createActivityName('sql_failed'),
   
   // Artifacts
-  ARTIFACT_CREATED: 'ccode.artifact_created',
-  ARTIFACT_RETRIEVED: 'ccode.artifact_retrieved',
+  ARTIFACT_CREATED: createActivityName('artifact_created'),
+  ARTIFACT_RETRIEVED: createActivityName('artifact_retrieved'),
   
   // Auditing
-  AUDIT_PASSED: 'ccode.audit_passed',
-  AUDIT_FAILED: 'ccode.audit_failed',
+  AUDIT_PASSED: createActivityName('audit_passed'),
+  AUDIT_FAILED: createActivityName('audit_failed'),
   
   // System events
-  BRIDGE_STARTED: 'ccode.bridge_started',
-  BRIDGE_STOPPED: 'ccode.bridge_stopped',
-  AGENT_INVOKED: 'ccode.agent_invoked',
-  AGENT_COMPLETED: 'ccode.agent_completed',
+  BRIDGE_STARTED: createActivityName('bridge_started'),
+  BRIDGE_STOPPED: createActivityName('bridge_stopped'),
+  AGENT_INVOKED: createActivityName('agent_invoked'),
+  AGENT_COMPLETED: createActivityName('agent_completed'),
   
   // Errors
-  ERROR_OCCURRED: 'ccode.error_occurred',
-  ERROR_RECOVERED: 'ccode.error_recovered'
+  ERROR_OCCURRED: createActivityName('error_occurred'),
+  ERROR_RECOVERED: createActivityName('error_recovered')
 };

@@ -2,7 +2,7 @@
 // v2.0.0 - Activity Schema IS the product (no fake tables!)
 
 const { validateSpec } = require('./schema');
-const schemaConfig = require('../snowflake-schema');
+const { fqn, qualifySource, createActivityName, SCHEMAS, TABLES, ACTIVITY_VIEW_MAP, DB } = require('../snowflake-schema/generated.js');
 
 class SpecGenerator {
   constructor() {
@@ -11,20 +11,20 @@ class SpecGenerator {
     // Activity-native panel configurations (the ONLY data source for v1)
     this.activityPanelTypes = {
       'activity_breakdown': {
-        source: 'ACTIVITY_CCODE.VW_ACTIVITY_COUNTS_24H',
+        source: 'VW_ACTIVITY_COUNTS_24H',
         x: 'activity',
         y: 'events_24h',
         type: 'bar',
         description: 'Activity counts by type and customer (24h window)'
       },
       'llm_performance': {
-        source: 'ACTIVITY_CCODE.VW_LLM_TELEMETRY',
+        source: 'VW_LLM_TELEMETRY',
         metric: 'latency_ms',
         type: 'histogram',
         description: 'LLM latency distribution and token usage'
       },
       'sql_cost_analysis': {
-        source: 'ACTIVITY_CCODE.VW_SQL_EXECUTIONS',
+        source: 'VW_SQL_EXECUTIONS',
         x: 'ts',
         y: 'bytes_scanned',
         type: 'timeseries',
@@ -32,21 +32,21 @@ class SpecGenerator {
         description: 'SQL query costs and performance over time'
       },
       'dashboard_operations': {
-        source: 'ACTIVITY_CCODE.VW_DASHBOARD_OPERATIONS',
+        source: 'VW_DASHBOARD_OPERATIONS',
         x: 'ts',
         y: 'panel_count',
         type: 'timeseries',
         description: 'Dashboard lifecycle events'
       },
       'template_usage': {
-        source: 'ACTIVITY_CCODE.VW_SAFESQL_TEMPLATES',
+        source: 'VW_SAFESQL_TEMPLATES',
         x: 'template',
         y: 'template_running_count',
         type: 'bar',
         description: 'SafeSQL template usage patterns'
       },
       'activity_summary': {
-        source: 'ACTIVITY_CCODE.VW_ACTIVITY_SUMMARY',
+        source: 'VW_ACTIVITY_SUMMARY',
         type: 'metrics',
         description: 'High-level activity metrics overview'
       }
@@ -95,7 +95,7 @@ class SpecGenerator {
   }
 
   // Main generation method: Intent → Activity Dashboard Spec
-  async generateFromIntent(intent) {
+  generateFromIntent(intent) {
     console.log(`📝 Generating Activity-native dashboard spec from intent (${intent.confidence}% confidence)`);
     
     if (!intent.isDashboardRequest) {
@@ -108,7 +108,7 @@ class SpecGenerator {
     const spec = {
       name: this.generateValidName(requirements.name || 'activity_dashboard'),
       timezone: requirements.timezone || 'America/New_York',
-      panels: await this.generateActivityPanels(requirements),
+      panels: this.generateActivityPanels(requirements),
       schedule: this.generateSchedule(requirements.schedule)
     };
     
@@ -124,7 +124,7 @@ class SpecGenerator {
   }
 
   // Generate Activity-native panels based on requirements
-  async generateActivityPanels(requirements) {
+  generateActivityPanels(requirements) {
     const panels = [];
     const detectedTypes = new Set();
     

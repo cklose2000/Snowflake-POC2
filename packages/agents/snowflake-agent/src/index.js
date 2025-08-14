@@ -1,6 +1,7 @@
 // Snowflake Agent - SafeSQL execution only (v1)
-import snowflake from 'snowflake-sdk';
-import { SAFESQL_TEMPLATES } from './templates.js';
+const snowflake = require('snowflake-sdk');
+const { SAFESQL_TEMPLATES } = require('./templates.js');
+const { fqn, qualifySource, createActivityName, SCHEMAS, TABLES, ACTIVITY_VIEW_MAP, DB, getContextSQL } = require('../../snowflake-schema/generated.js');
 
 class SnowflakeAgent {
   constructor() {
@@ -25,9 +26,10 @@ class SnowflakeAgent {
         if (err) {
           reject(err);
         } else {
-          // Always set context immediately
+          // Always set context immediately using generated helpers
+          const contextSQL = getContextSQL({ queryTag: 'snowflake-agent-init' });
           conn.execute({
-            sqlText: `USE DATABASE ${process.env.SNOWFLAKE_DATABASE}; USE SCHEMA ${process.env.SNOWFLAKE_SCHEMA};`,
+            sqlText: contextSQL.join('; '),
             complete: () => resolve(conn)
           });
         }
@@ -45,14 +47,14 @@ class SnowflakeAgent {
     this.validateParams(template, params);
 
     // Build SQL with parameters
-    const sql = this.buildSQL(template, params);
+    const { sql, binds } = this.buildSQL(template, params);
 
-    // Set query tag for tracking
+    // Set query tag for tracking using generated helpers
     const queryTag = `ccode-ui-${Date.now()}`;
     await this.setQueryTag(queryTag);
 
     // Execute query
-    const result = await this.executeQuery(sql);
+    const result = await this.executeQuery(sql, binds);
 
     // Create artifact if results > 10 rows
     if (result.length > 10) {
@@ -82,18 +84,18 @@ class SnowflakeAgent {
   }
 
   buildSQL(template, params) {
-    let sql = template.sql;
-    
-    // Replace template variables
-    for (const [key, value] of Object.entries(params)) {
-      sql = sql.replace(new RegExp(`{{${key}}}`, 'g'), value);
+    // Use parameterized queries with binds
+    if (template.parameterBuilder) {
+      const binds = template.parameterBuilder(params);
+      return { sql: template.sql, binds };
     }
-
-    return sql;
+    
+    // Fallback for simple templates without parameters
+    return { sql: template.sql, binds: [] };
   }
 
   async setQueryTag(tag) {
-    return this.executeQuery(`ALTER SESSION SET QUERY_TAG = '${tag}'`);
+    return this.executeQuery('ALTER SESSION SET QUERY_TAG = ?', [tag]);
   }
 
   executeQuery(sql, params = []) {
@@ -118,17 +120,18 @@ class SnowflakeAgent {
       // Small results: store directly in artifact_data table
       await this.storeInTable(artifactId, data);
       storageType = 'table';
-      storageLocation = 'analytics.activity_ccode.artifact_data';
+      storageLocation = fqn('ACTIVITY_CCODE', 'ARTIFACT_DATA');
     } else {
       // Large results: store in internal stage
       await this.storeInStage(artifactId, data);
       storageType = 'stage';
-      storageLocation = `@analytics.activity_ccode.artifact_stage/${artifactId}.json`;
+      storageLocation = `@${fqn('ACTIVITY_CCODE', 'ARTIFACT_STAGE')}/${artifactId}.json`;
     }
     
-    // Create artifact metadata record
+    // Create artifact metadata record using generated helpers
+    const artifactsTable = fqn('ACTIVITY_CCODE', TABLES.ACTIVITY_CCODE.ARTIFACTS);
     await this.executeQuery(`
-      INSERT INTO analytics.activity_ccode.artifacts (
+      INSERT INTO ${artifactsTable} (
         artifact_id, sample, row_count, schema_json, 
         storage_type, storage_location, bytes, customer, created_by_activity
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -157,8 +160,9 @@ class SnowflakeAgent {
 
   async storeInTable(artifactId, data) {
     // Store each row as JSON in artifact_data table
+    const artifactDataTable = fqn('ACTIVITY_CCODE', 'ARTIFACT_DATA');
     const insertSQL = `
-      INSERT INTO analytics.activity_ccode.artifact_data (artifact_id, row_number, row_data)
+      INSERT INTO ${artifactDataTable} (artifact_id, row_number, row_data)
       VALUES ${data.map((_, i) => `(?, ?, ?)`).join(', ')}
     `;
     
@@ -174,14 +178,13 @@ class SnowflakeAgent {
   async storeInStage(artifactId, data) {
     // Store large results in internal stage as compressed JSON
     const jsonData = JSON.stringify(data);
-    const stagePath = `@analytics.activity_ccode.artifact_stage/${artifactId}.json`;
+    const stagePath = `@${fqn('ACTIVITY_CCODE', 'ARTIFACT_STAGE')}/${artifactId}.json`;
     
     // Use Snowflake's PUT command to store in internal stage
-    return this.executeQuery(`
-      PUT 'data://text/json;base64,${Buffer.from(jsonData).toString('base64')}'
-      '${stagePath}'
-      AUTO_COMPRESS = TRUE
-    `);
+    return this.executeQuery(
+      'PUT ? ? AUTO_COMPRESS = TRUE',
+      [`data://text/json;base64,${Buffer.from(jsonData).toString('base64')}`, stagePath]
+    );
   }
 
   extractSchema(data) {
@@ -209,4 +212,4 @@ if (process.argv[2]) {
     });
 }
 
-export default SnowflakeAgent;
+module.exports = SnowflakeAgent;

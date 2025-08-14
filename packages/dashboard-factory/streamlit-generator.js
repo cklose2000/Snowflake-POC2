@@ -2,6 +2,7 @@
 // Generates complete Streamlit dashboards that connect to Snowflake objects
 
 const { generateObjectNames, convertCronToLocalDisplay } = require('./schema');
+const { fqn, qualifySource, createActivityName, SCHEMAS, TABLES, ACTIVITY_VIEW_MAP, DB } = require('../snowflake-schema/generated.js');
 
 class StreamlitGenerator {
   constructor() {

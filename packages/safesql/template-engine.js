@@ -20,8 +20,12 @@ class SafeSQLTemplateEngine {
         maxRows: 1000,
         allowSelectStar: true,
         preprocessor: (params) => {
+          // Use qualified table names - ACTIVITY.EVENTS for activity schema queries
+          const qualifiedTable = params.schema === 'ACTIVITY' && params.table === 'EVENTS' 
+            ? 'CLAUDE_BI.ACTIVITY.EVENTS' 
+            : `${params.schema}.${params.table}`;
           return {
-            table_full: `${params.schema}.${params.table}`,
+            table_full: qualifiedTable,
             limit: Math.min(params.n || 10, 1000)
           };
         }
@@ -39,7 +43,7 @@ class SafeSQLTemplateEngine {
         preprocessor: (params) => {
           return {
             ...params,
-            table_full: `${params.schema}.${params.table}`,
+            table_full: qualifySource(`${params.schema}.${params.table}`),
             limit: Math.min(params.n || 10, 100)
           };
         }
@@ -61,9 +65,13 @@ class SafeSQLTemplateEngine {
           if (!validGrains.includes(params.grain)) {
             throw new Error(`Invalid grain. Must be one of: ${validGrains.join(', ')}`);
           }
+          // Use qualified table names for activity schema queries
+          const qualifiedTable = params.schema === 'ACTIVITY' && params.table === 'EVENTS' 
+            ? 'CLAUDE_BI.ACTIVITY.EVENTS' 
+            : `${params.schema}.${params.table}`;
           return {
             ...params,
-            table_full: `${params.schema}.${params.table}`
+            table_full: qualifiedTable
           };
         }
       },
@@ -80,7 +88,9 @@ class SafeSQLTemplateEngine {
         preprocessor: (params) => {
           return {
             ...params,
-            table_full: `${params.schema}.${params.table}`,
+            table_full: params.schema === 'ACTIVITY' && params.table === 'EVENTS' 
+              ? 'CLAUDE_BI.ACTIVITY.EVENTS' 
+              : `${params.schema}.${params.table}`,
             limit: params.limit || 100
           };
         }
@@ -106,9 +116,13 @@ class SafeSQLTemplateEngine {
                  'metric', 'table_full', 'date_column', 'start_date_b', 'date_column', 'end_date_b'],
         maxRows: 1,
         preprocessor: (params) => {
+          // Use qualified table names for activity schema queries
+          const qualifiedTable = params.schema === 'ACTIVITY' && params.table === 'EVENTS' 
+            ? 'CLAUDE_BI.ACTIVITY.EVENTS' 
+            : `${params.schema}.${params.table}`;
           return {
             ...params,
-            table_full: `${params.schema}.${params.table}`
+            table_full: qualifiedTable
           };
         }
       },
@@ -117,8 +131,8 @@ class SafeSQLTemplateEngine {
       recent_activities: {
         sql: `SELECT activity_id, ts, customer, activity, 
                      TO_VARCHAR(feature_json) as feature_json, _source_system
-              FROM ACTIVITY.EVENTS
-              WHERE ts > CURRENT_TIMESTAMP - INTERVAL '? hours'
+              FROM CLAUDE_BI.ACTIVITY.EVENTS
+              WHERE ts > CURRENT_TIMESTAMP - INTERVAL ? HOUR
               ORDER BY ts DESC
               LIMIT ?`,
         params: ['hours', 'limit'],
@@ -134,8 +148,8 @@ class SafeSQLTemplateEngine {
       activity_by_type: {
         sql: `SELECT activity, COUNT(*) as count, 
                      MIN(ts) as first_seen, MAX(ts) as last_seen
-              FROM ACTIVITY.EVENTS
-              WHERE ts > CURRENT_TIMESTAMP - INTERVAL '? hours'
+              FROM CLAUDE_BI.ACTIVITY.EVENTS
+              WHERE ts > CURRENT_TIMESTAMP - INTERVAL ? HOUR
               GROUP BY activity
               ORDER BY count DESC`,
         params: ['hours'],
@@ -220,23 +234,26 @@ class SafeSQLTemplateEngine {
 
   async logActivity(template, params) {
     const activityId = `act_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const sql = `INSERT INTO ACTIVITY.EVENTS (
+    const sql = `INSERT INTO CLAUDE_BI.ACTIVITY.EVENTS (
       activity_id, ts, customer, activity, feature_json, _source_system
-    ) SELECT
-      '${activityId}',
-      CURRENT_TIMESTAMP(),
-      '${params.customer || 'safesql_engine'}',
-      'ccode.sql_executed',
-      PARSE_JSON('${JSON.stringify({
+    ) VALUES (?, CURRENT_TIMESTAMP(), ?, ?, PARSE_JSON(?), ?)`;
+    
+    const binds = [
+      activityId,
+      params.customer || 'safesql_engine',
+      'ccode.sql_executed',  // Use activity namespace standard
+      JSON.stringify({
         template: template,
         params: params,
         timestamp: new Date().toISOString()
-      })}'),
-      'safesql_engine'`;
+      }),
+      'safesql_engine'
+    ];
 
     return new Promise((resolve) => {
       this.connection.execute({
         sqlText: sql,
+        binds: binds,
         complete: (err) => {
           if (err) console.error('Activity logging failed:', err);
           resolve(); // Don't fail the main query if logging fails

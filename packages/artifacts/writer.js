@@ -1,5 +1,6 @@
 // Artifact Writer - Pure Snowflake Storage
 import snowflake from 'snowflake-sdk';
+import { fqn, qualifySource, createActivityName, SCHEMAS, TABLES, ACTIVITY_VIEW_MAP, DB } from '../snowflake-schema/generated.js';
 
 export class ArtifactWriter {
   constructor(connection) {
@@ -39,12 +40,15 @@ export class ArtifactWriter {
 
   async storeInline(artifactId, data, metadata) {
     // Small results stored directly in artifacts table
-    await this.executeQuery(`
-      INSERT INTO analytics.activity_ccode.artifacts (
-        artifact_id, sample, row_count, schema_json, storage_type, 
-        storage_location, bytes, customer, created_by_activity
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
+    const artifactsTable = fqn(SCHEMAS.ACTIVITY_CCODE, TABLES.ACTIVITY_CCODE.ARTIFACTS);
+    const insertSQL = [
+      'INSERT INTO ' + artifactsTable + ' (',
+      '  artifact_id, sample, row_count, schema_json, storage_type,',
+      '  storage_location, bytes, customer, created_by_activity',
+      ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ].join('\n');
+    
+    await this.executeQuery(insertSQL, [
       artifactId,
       JSON.stringify(data), // Full data as sample
       data.length,
@@ -80,18 +84,21 @@ export class ArtifactWriter {
     await this.executeQuery(insertSQL, values);
     
     // Create metadata record
-    await this.executeQuery(`
-      INSERT INTO analytics.activity_ccode.artifacts (
-        artifact_id, sample, row_count, schema_json, storage_type,
-        storage_location, bytes, customer, created_by_activity
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
+    const artifactsTable = fqn(SCHEMAS.ACTIVITY_CCODE, TABLES.ACTIVITY_CCODE.ARTIFACTS);
+    const insertMetadataSQL = [
+      'INSERT INTO ' + artifactsTable + ' (',
+      '  artifact_id, sample, row_count, schema_json, storage_type,',
+      '  storage_location, bytes, customer, created_by_activity',
+      ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ].join('\n');
+    
+    await this.executeQuery(insertMetadataSQL, [
       artifactId,
       JSON.stringify(data.slice(0, 10)),
       data.length,
       JSON.stringify(this.extractSchema(data)),
       'table',
-      'analytics.activity_ccode.artifact_data',
+      fqn(SCHEMAS.ACTIVITY_CCODE, 'ARTIFACT_DATA'),
       JSON.stringify(data).length,
       metadata.customer,
       metadata.queryTag
@@ -108,30 +115,35 @@ export class ArtifactWriter {
   async storeInStage(artifactId, data, metadata) {
     // Large results stored in internal stage
     const jsonData = JSON.stringify(data, null, 2);
-    const stagePath = `@analytics.activity_ccode.artifact_stage/${artifactId}.json`;
+    const stageRef = fqn(SCHEMAS.ACTIVITY_CCODE, 'ARTIFACT_STAGE');
+    const stagePath = '@' + stageRef + '/' + artifactId + '.json';
     
-    // Use PUT command with inline data
+    // Use PUT command with inline data  
     const base64Data = Buffer.from(jsonData).toString('base64');
-    await this.executeQuery(`
-      PUT 'data://application/json;base64,${base64Data}' '${stagePath}' 
-      AUTO_COMPRESS = TRUE 
-      OVERWRITE = TRUE
-    `);
+    const putSQL = [
+      'PUT \'data://application/json;base64,' + base64Data + '\' \'' + stagePath + '\'',
+      'AUTO_COMPRESS = TRUE',
+      'OVERWRITE = TRUE'
+    ].join(' ');
+    
+    await this.executeQuery(putSQL);
     
     // Get compressed size from stage
-    const stageInfo = await this.executeQuery(`
-      LIST @analytics.activity_ccode.artifact_stage/${artifactId}.json
-    `);
+    const listSQL = 'LIST @' + stageRef + '/' + artifactId + '.json';
+    const stageInfo = await this.executeQuery(listSQL);
     
     const compressedBytes = stageInfo[0]?.SIZE || null;
     
     // Create metadata record
-    await this.executeQuery(`
-      INSERT INTO analytics.activity_ccode.artifacts (
-        artifact_id, sample, row_count, schema_json, storage_type,
-        storage_location, bytes, compressed_bytes, customer, created_by_activity
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
+    const artifactsTable = fqn(SCHEMAS.ACTIVITY_CCODE, TABLES.ACTIVITY_CCODE.ARTIFACTS);
+    const insertStageMetadataSQL = [
+      'INSERT INTO ' + artifactsTable + ' (',
+      '  artifact_id, sample, row_count, schema_json, storage_type,',
+      '  storage_location, bytes, compressed_bytes, customer, created_by_activity',
+      ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ].join('\n');
+    
+    await this.executeQuery(insertStageMetadataSQL, [
       artifactId,
       JSON.stringify(data.slice(0, 10)),
       data.length,

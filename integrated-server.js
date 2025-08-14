@@ -244,10 +244,29 @@ async function handleDirectSQL(ws, message) {
       content: `Available templates:\n${templates.map(t => `• ${t.name} (${t.params.join(', ')})`).join('\n')}`
     }));
   } else {
-    ws.send(JSON.stringify({
-      type: 'info',
-      content: 'Claude Code CLI not available. Use /sql commands or /help for templates.'
-    }));
+    // Check if this might be a dashboard request
+    const dashboardKeywords = ['dashboard', 'report', 'chart', 'graph', 'show me', 'create', 'build', 'display', 'visualize'];
+    const lowerMessage = message.toLowerCase();
+    const isDashboardRequest = dashboardKeywords.some(keyword => lowerMessage.includes(keyword));
+    
+    if (isDashboardRequest && dashboardFactory) {
+      // Create a simple conversation history for the dashboard factory
+      const conversationHistory = [
+        { role: 'user', content: message }
+      ];
+      
+      console.log('🎯 Dashboard request detected in natural language');
+      await handleDashboardCreate(ws, {
+        conversationHistory,
+        customerID: 'user',
+        sessionId: sessionId
+      }, sessionId);
+    } else {
+      ws.send(JSON.stringify({
+        type: 'info',
+        content: 'Claude Code CLI not available. Use /sql commands or /help for templates.'
+      }));
+    }
   }
 }
 

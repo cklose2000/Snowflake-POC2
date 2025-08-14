@@ -2,12 +2,11 @@
 // Implements binary scheduling: Tasks vs Dynamic Tables based on spec.schedule.mode
 
 const { generateObjectNames } = require('./schema');
-const cfg = require('../snowflake-schema/config');
+const { fqn, qualifySource, createActivityName, SCHEMAS, TABLES, ACTIVITY_VIEW_MAP, DB } = require('../snowflake-schema/generated.js');
 
 class SnowflakeObjectManager {
   constructor(snowflakeConnection) {
     this.snowflake = snowflakeConnection;
-    this.cfg = cfg;  // Schema configuration for FQN resolution
     this.version = '1.0.0';
     
     // Track created objects for cleanup
@@ -82,8 +81,11 @@ class SnowflakeObjectManager {
     const results = { views: [], tasks: [], dynamicTables: [], count: 0 };
 
     console.log(`📊 Creating objects for panel: ${panel.id}`);
+    
+    // Ensure we have the right schema context (views should be created in ANALYTICS)
+    await this.exec(`USE SCHEMA ${SCHEMAS.ANALYTICS}`, [], 'Set schema for view creation');
 
-    // Step 1: Create base view with SafeSQL template
+    // Step 1: Create base view with SafeSQL template  
     const baseViewSQL = this.generateBaseViewSQL(panel, objectNames.base_table);
     await this.executeSQL(baseViewSQL, `CREATE VIEW ${objectNames.base_table}`);
     results.views.push(objectNames.base_table);
@@ -146,8 +148,8 @@ class SnowflakeObjectManager {
     // Activity views already have fixed windows, no additional filtering needed
     // v1: All views are pre-filtered with appropriate time windows
     
-    // Use config module to qualify source with correct schema
-    const qualifiedSource = this.cfg.qualifySource(source);
+    // Use generated helper to qualify source with correct schema
+    const qualifiedSource = qualifySource(source);
     
     // Different SQL generation based on panel type
     if (type === 'chart' || type === 'table') {
@@ -304,7 +306,7 @@ class SnowflakeObjectManager {
             COUNT(DISTINCT activity) AS unique_activities,
             MIN(ts) AS earliest_event,
             MAX(ts) AS latest_event
-          FROM CLAUDE_BI.ACTIVITY.EVENTS
+          FROM ${fqn('ACTIVITY', TABLES.ACTIVITY.EVENTS)}
           WHERE ${whereClause}
         `;
         
@@ -387,7 +389,7 @@ class SnowflakeObjectManager {
         // Verify warehouse is set
         if (!results.checks.context.CURRENT_WAREHOUSE) {
           // Try to set from environment
-          const envWarehouse = process.env.SNOWFLAKE_WAREHOUSE || this.cfg.getWarehouse();
+          const envWarehouse = process.env.SNOWFLAKE_WAREHOUSE;
           if (envWarehouse) {
             console.log(`⚠️ No warehouse set, using ${envWarehouse}`);
             try {
@@ -409,8 +411,8 @@ class SnowflakeObjectManager {
         
         // Verify database/schema context
         if (!results.checks.context.CURRENT_DATABASE) {
-          console.log(`⚠️ No database set, using ${this.cfg.getDatabase()}`);
-          await this.executeSQL(`USE DATABASE ${this.cfg.getDatabase()}`, 'SET DATABASE');
+          console.log(`⚠️ No database set, using ${DB}`);
+          await this.executeSQL(`USE DATABASE ${DB}`, 'SET DATABASE');
         }
       } catch (error) {
         results.issues.push('context_check_failed');
@@ -427,10 +429,11 @@ class SnowflakeObjectManager {
             const checkSQL = `
               SELECT TABLE_NAME, CHANGE_TRACKING 
               FROM INFORMATION_SCHEMA.TABLES 
-              WHERE TABLE_NAME = '${panel.source.toUpperCase()}' 
+              WHERE TABLE_NAME = ? 
                 AND CHANGE_TRACKING = 'ON'
             `;
-            changeTrackingChecks.push(this.executeSQL(checkSQL, `CHECK CHANGE TRACKING ${panel.source}`));
+            const promise = this.exec(checkSQL, [panel.source.toUpperCase()], `CHECK CHANGE TRACKING ${panel.source}`);
+            changeTrackingChecks.push(promise);
           }
           
           const changeTrackingResults = await Promise.all(changeTrackingChecks);
@@ -464,15 +467,15 @@ class SnowflakeObjectManager {
         // Check if any objects with this spec hash already exist
         const existingObjects = [];
         const objectChecks = [
-          `SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.VIEWS WHERE VIEW_NAME LIKE '%${specHash}'`,
-          `SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.TASKS WHERE NAME LIKE '%${specHash}'`
+          { sql: `SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.VIEWS WHERE VIEW_NAME LIKE ?`, type: 'views' },
+          { sql: `SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.TASKS WHERE NAME LIKE ?`, type: 'tasks' }
         ];
         
-        for (const checkSQL of objectChecks) {
+        for (const check of objectChecks) {
           try {
-            const result = await this.executeSQL(checkSQL, 'CHECK EXISTING OBJECTS');
+            const result = await this.exec(check.sql, ['%' + specHash], 'CHECK EXISTING OBJECTS');
             if (result.resultSet[0]?.COUNT > 0) {
-              existingObjects.push(checkSQL.includes('VIEWS') ? 'views' : 'tasks');
+              existingObjects.push(check.type);
             }
           } catch (error) {
             console.log(`⚠️ Object existence check failed: ${error.message}`);
@@ -502,11 +505,12 @@ class SnowflakeObjectManager {
         try {
           // Activity views are already aggregated, so cost is minimal
           // Just check row count in the view
+          const qualifiedSource = qualifySource(panel.source);
           const sampleSQL = `
             SELECT 
               COUNT(*) as estimated_rows,
               COUNT(*) * 100 as estimated_bytes  -- Rough estimate
-            FROM ${panel.source} 
+            FROM ${qualifiedSource} 
             LIMIT 1000
           `;
           
@@ -559,7 +563,8 @@ class SnowflakeObjectManager {
           const isActivityView = panel.source?.includes('ACTIVITY_CCODE');
           const sourceType = isActivityView ? 'Activity view' : 'table';
           
-          const tableCheckSQL = `SELECT COUNT(*) as row_count FROM ${panel.source} LIMIT 1`;
+          const qualifiedSource = qualifySource(panel.source);
+          const tableCheckSQL = `SELECT COUNT(*) as row_count FROM ${qualifiedSource} LIMIT 1`;
           const tableResult = await this.executeSQL(tableCheckSQL, `CHECK ${sourceType.toUpperCase()} ${panel.source}`);
           results.checks[`source_${panel.source}`] = {
             accessible: true,
@@ -670,12 +675,16 @@ class SnowflakeObjectManager {
   }
 
   // Unified execute wrapper with binds support and query_id capture
-  async exec(sqlText, binds = {}, label = 'SQL') {
+  async exec(sqlText, binds = [], label = 'SQL') {
     console.log(`🔧 ${label}...`);
     return new Promise((resolve, reject) => {
+      // Convert object binds to array if needed (Snowflake SDK only supports arrays)
+      const bindArray = Array.isArray(binds) ? binds : 
+        (Object.keys(binds).length > 0 ? Object.values(binds) : []);
+        
       this.snowflake.execute({
         sqlText,
-        binds,  // Supports both named and positional binds
+        binds: bindArray,  // Snowflake SDK requires array for positional binds
         complete: (err, stmt, rows) => {
           if (err) {
             console.error(`❌ ${label} failed: ${err.message}`);
