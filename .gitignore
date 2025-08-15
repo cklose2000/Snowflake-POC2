@@ -30,4 +30,5 @@ temp/
 
 # Generated files
 src/generated-schema.js
-generated-dashboards/
+generated-dashboards/*.pem
+*.pub
