@@ -6,11 +6,99 @@
  */
 
 import { Command } from 'commander';
-import { SnowflakeSimpleClient } from './simple-client';
+import { SnowflakeSimpleClient, LogEvent } from './simple-client';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const program = new Command();
+
+/**
+ * Robust SQL statement splitter for Snowflake
+ * Handles dollar quotes, procedures, comments, and statement markers
+ */
+function splitStatements(sql: string): string[] {
+  const lines = sql.split(/\r?\n/);
+  const out: string[] = [];
+  let buf: string[] = [];
+  let inDollar = false;
+  let inBlockComment = false;
+  let useMarkers = false;
+
+  // Check if we have statement markers
+  for (const line of lines) {
+    if (line.trim() === '-- @statement') {
+      useMarkers = true;
+      break;
+    }
+  }
+
+  const push = () => { 
+    const s = buf.join('\n').trim(); 
+    // Only push non-comment statements
+    if (s && !s.startsWith('--') && !s.startsWith('/*')) {
+      out.push(s); 
+    }
+    buf = []; 
+  };
+
+  for (let raw of lines) {
+    const line = raw;
+
+    // If using markers, split ONLY on markers
+    if (useMarkers) {
+      if (line.trim() === '-- @statement') { 
+        if (buf.length) push(); 
+        continue; 
+      }
+      buf.push(line);
+      continue;
+    }
+
+    // Non-marker mode: traditional splitting
+    // Skip pure comment lines when buffer is empty
+    if (line.trim().startsWith('--') && buf.length === 0) { 
+      continue; 
+    }
+
+    // Handle block comments
+    if (inBlockComment) {
+      buf.push(line);
+      if (line.includes('*/')) inBlockComment = false;
+      continue;
+    }
+    if (line.trim().startsWith('/*')) { 
+      inBlockComment = !line.includes('*/'); 
+      buf.push(line); 
+      continue; 
+    }
+
+    // Track dollar quote state
+    const dollarCount = (line.match(/\$\$/g) || []).length;
+    if (dollarCount > 0) {
+      inDollar = !inDollar;
+    }
+
+    buf.push(line);
+
+    // End-of-statement detection
+    const trimmed = line.trim();
+    if (!inDollar) {
+      // Regular semicolon terminator outside dollar quotes
+      if (trimmed.endsWith(';')) {
+        push();
+      }
+    } else if (dollarCount > 0 && trimmed.match(/\$\$\s*;?\s*$/)) {
+      // Procedure/function body terminator: $$ with optional semicolon and whitespace
+      push();
+      inDollar = false;
+    }
+  }
+  
+  // Add any remaining statement
+  if (buf.length) push();
+
+  return out;
+}
 
 program
   .name('snowflake-simple')
@@ -211,6 +299,75 @@ program
   });
 
 /**
+ * Execute file command - run SQL statements from a file
+ */
+program
+  .command('exec-file <filepath>')
+  .description('Execute SQL statements from a file')
+  .action(async (filepath) => {
+    try {
+      const client = new SnowflakeSimpleClient();
+      
+      // Read the file
+      if (!fs.existsSync(filepath)) {
+        console.error(`❌ File not found: ${filepath}`);
+        process.exit(1);
+      }
+      
+      const sql = fs.readFileSync(filepath, 'utf8');
+      
+      // Use the robust statement splitter
+      const statements = splitStatements(sql);
+      
+      console.log(`📄 Executing ${statements.length} statements from ${filepath}\n`);
+      
+      // Connect once
+      await client.connect();
+      
+      // Execute each statement
+      for (let i = 0; i < statements.length; i++) {
+        const stmt = statements[i];
+        if (stmt) {
+          console.log(`▶️  Statement ${i+1}/${statements.length}...`);
+          
+          // Show first 80 chars of statement
+          const preview = stmt.substring(0, 80).replace(/\n/g, ' ');
+          console.log(`   ${preview}${stmt.length > 80 ? '...' : ''}`);
+          
+          const result = await client.executeSql(stmt);
+          if (result.success) {
+            console.log('   ✅ Success');
+            if (result.metadata?.rowCount !== undefined) {
+              console.log(`   📊 Rows affected: ${result.metadata.rowCount}`);
+            }
+          } else {
+            console.error(`   ❌ Failed: ${result.error}`);
+            await client.disconnect();
+            process.exit(1);
+          }
+        }
+      }
+      
+      // Log the file execution
+      await client.logEvent({
+        action: 'ccode.sql.file_executed',
+        object: { type: 'sql_file', id: path.basename(filepath) },
+        attributes: { 
+          filepath,
+          statement_count: statements.length
+        }
+      });
+      
+      console.log(`\n✅ All ${statements.length} statements executed successfully`);
+      
+      await client.disconnect();
+    } catch (error: any) {
+      console.error('❌ Error:', error.message);
+      process.exit(1);
+    }
+  });
+
+/**
  * Test command - comprehensive connection test
  */
 program
@@ -283,6 +440,68 @@ program
       await client.disconnect();
     } catch (error: any) {
       console.error('❌ Test failed:', error.message);
+      process.exit(1);
+    }
+  });
+
+/**
+ * Log command - log arbitrary events to ACTIVITY.EVENTS
+ */
+program
+  .command('log')
+  .description('Log an event to ACTIVITY.EVENTS')
+  .option('--action <action>', 'Event action (e.g., code.edit, git.commit)')
+  .option('--object <object>', 'Object reference (e.g., file:README.md, commit:abc123)')
+  .option('--attrs <json>', 'Event attributes as JSON')
+  .option('--dedupe <key>', 'Deduplication key to prevent duplicates')
+  .action(async (options) => {
+    try {
+      const client = new SnowflakeSimpleClient();
+      await client.connect();
+      
+      // Parse object if provided
+      let objectData: { type: string; id: string } | undefined;
+      if (options.object) {
+        const [type, ...idParts] = options.object.split(':');
+        objectData = { type, id: idParts.join(':') };
+      }
+      
+      // Parse attributes if provided
+      let attributes = {};
+      if (options.attrs) {
+        try {
+          attributes = JSON.parse(options.attrs);
+        } catch (e) {
+          console.error('❌ Invalid JSON in --attrs');
+          process.exit(1);
+        }
+      }
+      
+      // Add dedupe key if provided
+      if (options.dedupe) {
+        attributes = { ...attributes, dedupe_key: options.dedupe };
+      }
+      
+      // Build event
+      const event: LogEvent = {
+        action: options.action || 'code.unknown',
+        session_id: (client as any).sessionId,  // Access session ID
+        object: objectData,
+        attributes,
+        occurred_at: new Date().toISOString()
+      };
+      
+      // Log the event
+      await client.logEvent(event);
+      
+      console.log(`✅ Logged: ${event.action}`);
+      if (objectData) {
+        console.log(`   Object: ${objectData.type}:${objectData.id}`);
+      }
+      
+      await client.disconnect();
+    } catch (error: any) {
+      console.error('❌ Log failed:', error.message);
       process.exit(1);
     }
   });

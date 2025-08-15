@@ -51,6 +51,7 @@ export class SnowflakeSimpleClient {
   private connection: Connection | null = null;
   private config: ClientConfig;
   private isConnected: boolean = false;
+  private sessionId: string;
   
   // Logging state
   private eventBuffer: LogEvent[] = [];
@@ -64,6 +65,9 @@ export class SnowflakeSimpleClient {
   };
 
   constructor(config?: ClientConfig, logConfig?: LogConfig) {
+    // Generate unique session ID
+    this.sessionId = `cc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
     // Load from environment if not provided
     this.config = {
       account: config?.account || process.env.SNOWFLAKE_ACCOUNT,
@@ -104,7 +108,10 @@ export class SnowflakeSimpleClient {
       username: this.config.username,
       warehouse: this.config.warehouse,
       database: this.config.database,
-      schema: this.config.schema
+      schema: this.config.schema,
+      // Performance optimizations
+      clientSessionKeepAlive: true,
+      statementTimeout: 120
       // Role is intentionally omitted - use DEFAULT_ROLE on user
     };
 
@@ -127,15 +134,41 @@ export class SnowflakeSimpleClient {
     return new Promise((resolve, reject) => {
       this.connection = snowflake.createConnection(connectionOptions);
       
-      this.connection.connect((err) => {
+      this.connection.connect(async (err) => {
         if (err) {
           reject(new Error(`Connection failed: ${err.message}`));
         } else {
           this.isConnected = true;
           console.log(`✅ Connected to Snowflake as ${this.config.username}`);
+          console.log(`📊 Session ID: ${this.sessionId}`);
           
-          // Set initial query tag for observability
-          this.setQueryTag('session_init').then(() => resolve()).catch(reject);
+          try {
+            // Session optimization settings for performance
+            await this.execute(`ALTER SESSION SET 
+              AUTOCOMMIT = TRUE,
+              USE_CACHED_RESULT = TRUE,
+              STATEMENT_TIMEOUT_IN_SECONDS = 120,
+              QUERY_TAG = 'cc-cli|session:${this.sessionId}'`);
+            
+            // Explicitly set warehouse to ensure deterministic usage
+            await this.execute(`USE WAREHOUSE ${this.config.warehouse}`);
+            
+            // Log session start to ACTIVITY.EVENTS
+            await this.logEvent({
+              action: 'ccode.session.started',
+              session_id: this.sessionId,
+              attributes: {
+                user: this.config.username,
+                warehouse: this.config.warehouse,
+                database: this.config.database,
+                schema: this.config.schema
+              }
+            });
+            
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
         }
       });
     });
@@ -314,25 +347,67 @@ export class SnowflakeSimpleClient {
     await this.connect();
     
     const startTime = Date.now();
+    let success = false;
+    let error: string | undefined;
+    let rows: any;
+    let rowCount: number | undefined;
+    
     try {
-      const rows = await this.execute(sql, binds);
-      return {
-        success: true,
-        data: rows,
-        metadata: {
-          executionTimeMs: Date.now() - startTime,
-          rowCount: rows.length
-        }
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message,
-        metadata: {
-          executionTimeMs: Date.now() - startTime
-        }
-      };
+      rows = await this.execute(sql, binds);
+      success = true;
+      rowCount = Array.isArray(rows) ? rows.length : undefined;
+    } catch (err: any) {
+      success = false;
+      error = err.message;
     }
+    
+    const executionTime = Date.now() - startTime;
+    
+    // Log to ACTIVITY.EVENTS
+    await this.logEvent({
+      action: 'ccode.sql.executed',
+      session_id: this.sessionId,
+      attributes: {
+        sql_preview: sql.substring(0, 200),
+        sql_type: this.detectSqlType(sql),
+        execution_time_ms: executionTime,
+        success,
+        rows_affected: rowCount,
+        error
+      }
+    });
+    
+    return {
+      success,
+      data: rows,
+      error,
+      metadata: {
+        executionTimeMs: executionTime,
+        rowCount
+      }
+    };
+  }
+  
+  /**
+   * Detect SQL statement type for logging
+   */
+  private detectSqlType(sql: string): string {
+    const upper = sql.toUpperCase().trim();
+    if (upper.startsWith('CREATE')) return 'DDL_CREATE';
+    if (upper.startsWith('ALTER')) return 'DDL_ALTER';
+    if (upper.startsWith('DROP')) return 'DDL_DROP';
+    if (upper.startsWith('GRANT')) return 'DCL_GRANT';
+    if (upper.startsWith('REVOKE')) return 'DCL_REVOKE';
+    if (upper.startsWith('INSERT')) return 'DML_INSERT';
+    if (upper.startsWith('UPDATE')) return 'DML_UPDATE';
+    if (upper.startsWith('DELETE')) return 'DML_DELETE';
+    if (upper.startsWith('MERGE')) return 'DML_MERGE';
+    if (upper.startsWith('SELECT')) return 'DQL_SELECT';
+    if (upper.startsWith('CALL')) return 'PROC_CALL';
+    if (upper.startsWith('USE')) return 'SESSION';
+    if (upper.startsWith('SHOW')) return 'METADATA';
+    if (upper.startsWith('DESC')) return 'METADATA';
+    return 'OTHER';
   }
 
   /**

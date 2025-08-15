@@ -1,0 +1,120 @@
+{
+  "event_taxonomy": {
+    "version": "1.0.0",
+    "description": "Event taxonomy for complete code lifecycle tracking",
+    "categories": {
+      "code": {
+        "description": "Code editing and file operations",
+        "events": {
+          "edit": "File content modified",
+          "create": "New file created",
+          "delete": "File deleted",
+          "rename": "File renamed",
+          "move": "File moved to different directory"
+        }
+      },
+      "git": {
+        "description": "Version control operations",
+        "events": {
+          "commit": "Code committed to repository",
+          "push": "Code pushed to remote",
+          "pull": "Code pulled from remote",
+          "branch.create": "New branch created",
+          "branch.switch": "Switched to different branch",
+          "merge": "Branches merged",
+          "rebase": "Branch rebased"
+        }
+      },
+      "npm": {
+        "description": "Build and test operations",
+        "events": {
+          "test.begin": "Test suite started",
+          "test.end": "Test suite completed",
+          "build.begin": "Build process started",
+          "build.end": "Build process completed",
+          "lint.begin": "Linting started",
+          "lint.end": "Linting completed",
+          "start.begin": "Application started",
+          "start.end": "Application stopped",
+          "setup.begin": "Setup process started",
+          "setup.end": "Setup process completed",
+          "validate.begin": "Validation started",
+          "validate.end": "Validation completed",
+          "codegen.begin": "Code generation started",
+          "codegen.end": "Code generation completed"
+        }
+      },
+      "dashboard": {
+        "description": "Dashboard operations",
+        "events": {
+          "generation.start": "Dashboard generation initiated",
+          "generation.end": "Dashboard generation completed",
+          "created": "New dashboard created",
+          "saved": "Dashboard configuration saved",
+          "deleted": "Dashboard deleted",
+          "viewed": "Dashboard accessed"
+        }
+      },
+      "ccode": {
+        "description": "Claude Code session and SQL operations",
+        "events": {
+          "session.started": "Claude Code session initiated",
+          "session.ended": "Claude Code session terminated",
+          "sql.executed": "SQL statement executed",
+          "sql.file_executed": "SQL file executed",
+          "query.executed": "Natural language query executed"
+        }
+      },
+      "system": {
+        "description": "System and configuration events",
+        "events": {
+          "config.updated": "Configuration changed",
+          "permission.granted": "Permission granted",
+          "permission.revoked": "Permission revoked",
+          "error": "System error occurred",
+          "warning": "System warning"
+        }
+      }
+    },
+    "attributes": {
+      "common": {
+        "session_id": "Unique session identifier",
+        "occurred_at": "Timestamp of event",
+        "actor_id": "User or system that triggered event",
+        "dedupe_key": "Key for preventing duplicate events"
+      },
+      "code_specific": {
+        "filepath": "Path to file",
+        "size_bytes": "File size in bytes",
+        "hash_before": "File hash before change",
+        "hash_after": "File hash after change",
+        "lines_added": "Number of lines added",
+        "lines_removed": "Number of lines removed"
+      },
+      "git_specific": {
+        "commit_sha": "Git commit SHA",
+        "branch": "Git branch name",
+        "remote": "Remote repository",
+        "files_changed": "Number of files changed",
+        "insertions": "Total insertions",
+        "deletions": "Total deletions",
+        "message_preview": "First 100 chars of commit message"
+      },
+      "npm_specific": {
+        "exit_code": "Process exit code",
+        "duration_ms": "Execution duration in milliseconds",
+        "tests_passed": "Number of tests passed",
+        "tests_failed": "Number of tests failed",
+        "warnings_count": "Number of warnings"
+      },
+      "sql_specific": {
+        "sql_preview": "First 200 chars of SQL",
+        "sql_type": "Type of SQL (DDL, DML, DQL, etc)",
+        "execution_time_ms": "Query execution time",
+        "rows_affected": "Number of rows affected",
+        "success": "Whether execution succeeded",
+        "error": "Error message if failed"
+      }
+    }
+  }
+}

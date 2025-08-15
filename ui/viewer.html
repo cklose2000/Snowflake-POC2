@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Viewer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --text: #f1f5f9;
+      --border: #334155;
+      --accent: #3b82f6;
+    }
+    .light {
+      --bg: #ffffff;
+      --surface: #f8fafc;
+      --text: #1e293b;
+      --border: #e2e8f0;
+      --accent: #3b82f6;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      height: 100%;
+    }
+    .metric-card {
+      background: var(--bg);
+      padding: 1rem;
+      border-radius: 0.5rem;
+      text-align: center;
+    }
+    .metric-value {
+      font-size: 2rem;
+      font-weight: bold;
+      color: var(--accent);
+    }
+    .metric-label {
+      font-size: 0.875rem;
+      opacity: 0.6;
+      margin-top: 0.25rem;
+    }
+    .refresh-indicator {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      padding: 0.5rem 1rem;
+      background: var(--surface);
+      border-radius: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      z-index: 50;
+    }
+    .refresh-indicator.refreshing {
+      background: var(--accent);
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      width: 1rem;
+      height: 1rem;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+  </style>
+</head>
+<body>
+  <!-- Refresh Indicator -->
+  <div id="refresh-indicator" class="refresh-indicator">
+    <span id="refresh-text">Auto-refresh: 5 min</span>
+    <div id="refresh-spinner" class="spinner" style="display: none;"></div>
+  </div>
+
+  <!-- Main Dashboard Container -->
+  <div id="dashboard-container" class="container mx-auto p-4">
+    <!-- Dashboard Title -->
+    <header class="mb-6">
+      <h1 id="dashboard-title" class="text-2xl font-bold">Loading Dashboard...</h1>
+      <p id="dashboard-subtitle" class="text-sm opacity-60 mt-1"></p>
+    </header>
+
+    <!-- Panels Grid -->
+    <div id="panels-grid" class="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+      <!-- Panels will be dynamically inserted here -->
+    </div>
+  </div>
+
+  <script>
+    // Dashboard state
+    let dashboardId = null;
+    let dashboardSpec = null;
+    let refreshInterval = 300; // Default 5 minutes
+    let refreshTimer = null;
+    let charts = {};
+    let eventCursor = null;
+
+    // Initialize on load
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Get dashboard ID from URL
+      const pathParts = window.location.pathname.split('/');
+      dashboardId = pathParts[pathParts.length - 1];
+      
+      if (!dashboardId || dashboardId === 'viewer.html') {
+        showError('No dashboard ID provided');
+        return;
+      }
+
+      // Load dashboard
+      await loadDashboard();
+      
+      // Start auto-refresh
+      startAutoRefresh();
+    });
+
+    /**
+     * Load dashboard specification
+     */
+    async function loadDashboard() {
+      try {
+        const response = await fetch(`/api/dashboard/${dashboardId}`);
+        if (!response.ok) throw new Error('Dashboard not found');
+        
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Failed to load dashboard');
+        
+        dashboardSpec = data.dashboard;
+        refreshInterval = dashboardSpec.refresh_interval_sec || 300;
+        
+        // Update title
+        document.getElementById('dashboard-title').textContent = dashboardSpec.title;
+        document.getElementById('dashboard-subtitle').textContent = 
+          `Created ${new Date(dashboardSpec.created_at).toLocaleDateString()}`;
+        
+        // Render panels
+        renderPanels();
+        
+        // Load data for all panels
+        await loadAllPanelData();
+        
+      } catch (error) {
+        showError(`Failed to load dashboard: ${error.message}`);
+      }
+    }
+
+    /**
+     * Render panel containers
+     */
+    function renderPanels() {
+      const container = document.getElementById('panels-grid');
+      container.innerHTML = '';
+      
+      if (!dashboardSpec.spec || !dashboardSpec.spec.panels) {
+        showError('Invalid dashboard specification');
+        return;
+      }
+      
+      dashboardSpec.spec.panels.forEach(panel => {
+        const panelEl = document.createElement('div');
+        panelEl.className = panel.type === 'metrics' ? 'col-span-full' : '';
+        panelEl.innerHTML = `
+          <div class="panel" id="panel-${panel.id}">
+            <h3 class="text-lg font-semibold mb-3">${panel.title || panel.id}</h3>
+            <div class="panel-content" id="content-${panel.id}">
+              <div class="text-center py-8 opacity-60">Loading...</div>
+            </div>
+          </div>
+        `;
+        container.appendChild(panelEl);
+      });
+    }
+
+    /**
+     * Load data for all panels
+     */
+    async function loadAllPanelData() {
+      const promises = dashboardSpec.spec.panels.map(panel => loadPanelData(panel));
+      await Promise.all(promises);
+    }
+
+    /**
+     * Load data for a single panel
+     */
+    async function loadPanelData(panel) {
+      try {
+        // Prepare request based on panel type
+        const request = {
+          proc: panel.proc,
+          params: resolveParams(panel.params)
+        };
+        
+        // Call API
+        const response = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request)
+        });
+        
+        const result = await response.json();
+        if (!result.ok) throw new Error(result.error);
+        
+        // Render based on panel type
+        switch (panel.type) {
+          case 'metrics':
+            renderMetrics(panel.id, result.data);
+            break;
+          case 'series':
+            renderTimeSeries(panel.id, result.data);
+            break;
+          case 'topn':
+            renderTopN(panel.id, result.data);
+            break;
+          case 'events':
+            renderEvents(panel.id, result.data);
+            if (result.next_cursor) {
+              eventCursor = result.next_cursor;
+            }
+            break;
+          default:
+            renderTable(panel.id, result.data);
+        }
+        
+      } catch (error) {
+        document.getElementById(`content-${panel.id}`).innerHTML = 
+          `<div class="text-red-500">Error: ${error.message}</div>`;
+      }
+    }
+
+    /**
+     * Resolve parameter SQL expressions
+     */
+    function resolveParams(params) {
+      if (!params) return {};
+      
+      const resolved = {};
+      for (const [key, value] of Object.entries(params)) {
+        if (value && typeof value === 'object' && value.sql_expr) {
+          // This needs server-side evaluation
+          resolved[key] = value;
+        } else {
+          resolved[key] = value;
+        }
+      }
+      return resolved;
+    }
+
+    /**
+     * Render metrics panel
+     */
+    function renderMetrics(panelId, data) {
+      const container = document.getElementById(`content-${panelId}`);
+      
+      if (!data || typeof data !== 'object') {
+        container.innerHTML = '<div class="text-center opacity-60">No data</div>';
+        return;
+      }
+      
+      const metrics = Object.entries(data).filter(([key]) => 
+        !key.toLowerCase().includes('_at') && !key.toLowerCase().includes('query')
+      );
+      
+      container.innerHTML = `
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          ${metrics.map(([key, value]) => `
+            <div class="metric-card">
+              <div class="metric-value">${formatNumber(value)}</div>
+              <div class="metric-label">${formatLabel(key)}</div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    /**
+     * Render time series chart
+     */
+    function renderTimeSeries(panelId, data) {
+      const container = document.getElementById(`content-${panelId}`);
+      
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        container.innerHTML = '<div class="text-center opacity-60">No data</div>';
+        return;
+      }
+      
+      // Create canvas
+      container.innerHTML = '<canvas id="chart-' + panelId + '" style="max-height: 300px;"></canvas>';
+      
+      // Destroy existing chart if any
+      if (charts[panelId]) {
+        charts[panelId].destroy();
+      }
+      
+      // Create chart
+      const ctx = document.getElementById('chart-' + panelId).getContext('2d');
+      charts[panelId] = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.map(d => formatTime(d.TIME_BUCKET || d.time_bucket)),
+          datasets: [{
+            label: 'Events',
+            data: data.map(d => d.EVENT_COUNT || d.event_count || 0),
+            borderColor: getComputedStyle(document.documentElement).getPropertyValue('--accent'),
+            backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--accent') + '20',
+            tension: 0.4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    /**
+     * Render top-N chart
+     */
+    function renderTopN(panelId, data) {
+      const container = document.getElementById(`content-${panelId}`);
+      
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        container.innerHTML = '<div class="text-center opacity-60">No data</div>';
+        return;
+      }
+      
+      // Create canvas
+      container.innerHTML = '<canvas id="chart-' + panelId + '" style="max-height: 300px;"></canvas>';
+      
+      // Destroy existing chart if any
+      if (charts[panelId]) {
+        charts[panelId].destroy();
+      }
+      
+      // Create chart
+      const ctx = document.getElementById('chart-' + panelId).getContext('2d');
+      charts[panelId] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: data.map(d => d.ITEM || d.item || 'Unknown'),
+          datasets: [{
+            label: 'Count',
+            data: data.map(d => d.COUNT || d.count || 0),
+            backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--accent')
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    /**
+     * Render events stream
+     */
+    function renderEvents(panelId, data) {
+      const container = document.getElementById(`content-${panelId}`);
+      
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        container.innerHTML = '<div class="text-center opacity-60">No recent events</div>';
+        return;
+      }
+      
+      container.innerHTML = `
+        <div class="space-y-2 max-h-96 overflow-y-auto">
+          ${data.map(event => `
+            <div class="p-2 bg-[var(--bg)] rounded flex justify-between items-start">
+              <div>
+                <div class="font-medium text-sm">${event.action || event.ACTION}</div>
+                <div class="text-xs opacity-60">${event.actor_id || event.ACTOR_ID || 'System'}</div>
+              </div>
+              <div class="text-xs opacity-40">${formatTime(event.occurred_at || event.OCCURRED_AT)}</div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    /**
+     * Render generic table
+     */
+    function renderTable(panelId, data) {
+      const container = document.getElementById(`content-${panelId}`);
+      
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        container.innerHTML = '<div class="text-center opacity-60">No data</div>';
+        return;
+      }
+      
+      const keys = Object.keys(data[0]);
+      
+      container.innerHTML = `
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-[var(--border)]">
+                ${keys.map(key => `<th class="p-2 text-left">${formatLabel(key)}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${data.slice(0, 10).map(row => `
+                <tr class="border-b border-[var(--border)] hover:bg-[var(--bg)]">
+                  ${keys.map(key => `<td class="p-2">${formatValue(row[key])}</td>`).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    /**
+     * Start auto-refresh timer
+     */
+    function startAutoRefresh() {
+      // Clear existing timer
+      if (refreshTimer) clearInterval(refreshTimer);
+      
+      // Update indicator
+      document.getElementById('refresh-text').textContent = 
+        `Auto-refresh: ${refreshInterval < 60 ? refreshInterval + 's' : Math.floor(refreshInterval/60) + 'min'}`;
+      
+      // Set timer
+      refreshTimer = setInterval(async () => {
+        // Show refreshing state
+        document.getElementById('refresh-indicator').classList.add('refreshing');
+        document.getElementById('refresh-spinner').style.display = 'block';
+        
+        // Reload data
+        await loadAllPanelData();
+        
+        // Hide refreshing state
+        setTimeout(() => {
+          document.getElementById('refresh-indicator').classList.remove('refreshing');
+          document.getElementById('refresh-spinner').style.display = 'none';
+        }, 500);
+        
+      }, refreshInterval * 1000);
+    }
+
+    /**
+     * Format utilities
+     */
+    function formatTime(timestamp) {
+      if (!timestamp) return '';
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diff = now - date;
+      
+      if (diff < 60000) return 'Just now';
+      if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+      if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+      
+      return date.toLocaleString();
+    }
+
+    function formatNumber(value) {
+      if (value === null || value === undefined) return '-';
+      if (typeof value === 'number') {
+        if (value >= 1000000) return (value/1000000).toFixed(1) + 'M';
+        if (value >= 1000) return (value/1000).toFixed(1) + 'K';
+        return value.toLocaleString();
+      }
+      return value;
+    }
+
+    function formatLabel(key) {
+      return key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+
+    function formatValue(value) {
+      if (value === null || value === undefined) return '-';
+      if (typeof value === 'object') return JSON.stringify(value);
+      if (typeof value === 'string' && value.includes('T') && value.includes('Z')) {
+        return formatTime(value);
+      }
+      return formatNumber(value);
+    }
+
+    function showError(message) {
+      document.getElementById('dashboard-container').innerHTML = `
+        <div class="text-center py-16">
+          <div class="text-red-500 text-xl mb-2">⚠️ Error</div>
+          <div class="opacity-60">${message}</div>
+        </div>
+      `;
+    }
+  </script>
+</body>
+</html>

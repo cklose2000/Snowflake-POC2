@@ -42,30 +42,71 @@
     <section id="query-panel" class="bg-[var(--surface)] rounded-lg p-4 overflow-y-auto mobile-panel">
       <h2 class="text-lg font-semibold mb-4">Quick Queries</h2>
       
-      <!-- Query suggestions populated from schema -->
-      <div id="suggestions" class="space-y-2 mb-6">
-        <!-- Loading state -->
-        <div class="animate-pulse">
-          <div class="h-12 bg-[var(--bg)] rounded-lg mb-2"></div>
-          <div class="h-12 bg-[var(--bg)] rounded-lg mb-2"></div>
-          <div class="h-12 bg-[var(--bg)] rounded-lg"></div>
+      <!-- Preset Buttons Section -->
+      <div class="mb-6">
+        <div class="text-sm opacity-60 mb-2">One-Click Presets</div>
+        
+        <!-- Time-based presets -->
+        <div class="grid grid-cols-2 gap-2 mb-3">
+          <button onclick="executePreset('today')" class="preset-btn bg-[var(--bg)] hover:bg-opacity-80 p-3 rounded-lg text-left transition">
+            <span class="text-lg">📅</span>
+            <span class="ml-2 text-sm">Today</span>
+          </button>
+          <button onclick="executePreset('last_6h_15min')" class="preset-btn bg-[var(--bg)] hover:bg-opacity-80 p-3 rounded-lg text-left transition">
+            <span class="text-lg">⏰</span>
+            <span class="ml-2 text-sm">Last 6h</span>
+          </button>
+          <button onclick="executePreset('last_hour_5min')" class="preset-btn bg-[var(--bg)] hover:bg-opacity-80 p-3 rounded-lg text-left transition">
+            <span class="text-lg">⚡</span>
+            <span class="ml-2 text-sm">Last Hour</span>
+          </button>
+          <button onclick="executePreset('this_week')" class="preset-btn bg-[var(--bg)] hover:bg-opacity-80 p-3 rounded-lg text-left transition">
+            <span class="text-lg">📊</span>
+            <span class="ml-2 text-sm">This Week</span>
+          </button>
         </div>
+        
+        <!-- Ranking presets -->
+        <div class="grid grid-cols-2 gap-2 mb-3">
+          <button onclick="executePreset('top_actions')" class="preset-btn bg-[var(--bg)] hover:bg-opacity-80 p-3 rounded-lg text-left transition">
+            <span class="text-lg">🎯</span>
+            <span class="ml-2 text-sm">Top Actions</span>
+          </button>
+          <button onclick="executePreset('top_users')" class="preset-btn bg-[var(--bg)] hover:bg-opacity-80 p-3 rounded-lg text-left transition">
+            <span class="text-lg">👥</span>
+            <span class="ml-2 text-sm">Top Users</span>
+          </button>
+        </div>
+        
+        <!-- Metrics preset -->
+        <button onclick="executePreset('summary_today')" class="preset-btn bg-[var(--bg)] hover:bg-opacity-80 p-3 rounded-lg text-left transition w-full">
+          <span class="text-lg">📈</span>
+          <span class="ml-2 text-sm">Today's Summary</span>
+        </button>
       </div>
       
       <!-- Custom query input -->
       <div class="border-t border-[var(--border)] pt-4">
-        <label class="text-sm opacity-60 block mb-2">Custom Query</label>
+        <label class="text-sm opacity-60 block mb-2">Natural Language Query</label>
         <textarea 
           id="custom-query"
           class="w-full p-3 bg-[var(--bg)] rounded-lg resize-none border border-[var(--border)] focus:border-[var(--accent)] transition"
           rows="3"
-          placeholder="Ask about your data..."
+          placeholder="e.g. 'Show events by 15 minutes over last 6 hours'"
           onkeydown="if(event.key === 'Enter' && event.ctrlKey) executeCustomQuery()"></textarea>
-        <button 
-          onclick="executeCustomQuery()"
-          class="mt-2 w-full py-3 bg-[var(--accent)] hover:opacity-90 rounded-lg font-medium transition touch-target">
-          Analyze
-        </button>
+        <div class="flex gap-2 mt-2">
+          <button 
+            onclick="executeCustomQuery()"
+            class="flex-1 py-3 bg-[var(--accent)] hover:opacity-90 rounded-lg font-medium transition touch-target">
+            Analyze
+          </button>
+          <button 
+            onclick="saveAsDashboard()"
+            class="py-3 px-4 bg-[var(--surface)] hover:bg-opacity-80 rounded-lg font-medium transition touch-target"
+            title="Save as dashboard">
+            💾
+          </button>
+        </div>
       </div>
     </section>
     
@@ -160,8 +201,182 @@
   <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
   
   <!-- Scripts -->
+  <script src="../src/presets.js"></script>
+  <script src="../src/nl-compiler.js"></script>
   <script src="js/schema-client.js"></script>
   <script src="js/charts.js"></script>
   <script src="js/dashboard.js"></script>
+  
+  <script>
+    // Preset execution function
+    async function executePreset(presetId) {
+      const preset = getPresetById(presetId);
+      if (!preset) {
+        showToast('Preset not found', 'error');
+        return;
+      }
+      
+      try {
+        // Resolve params
+        const resolvedParams = resolvePresetParams(preset.params);
+        
+        // Call API
+        const response = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            proc: preset.proc,
+            params: resolvedParams
+          })
+        });
+        
+        const result = await response.json();
+        if (!result.ok) throw new Error(result.error);
+        
+        // Show the result based on type
+        if (preset.proc === 'DASH_GET_METRICS') {
+          updateMetrics(result.data);
+        } else if (preset.proc === 'DASH_GET_SERIES') {
+          updateChart('trend', formatSeriesData(result.data));
+          showMobilePanel('viz');
+        } else if (preset.proc === 'DASH_GET_TOPN') {
+          updateChart('ranking', formatTopNData(result.data));
+          showMobilePanel('viz');
+        } else if (preset.proc === 'DASH_GET_EVENTS') {
+          result.data.forEach(event => addToActivityFeed(event));
+          showMobilePanel('stream');
+        }
+        
+        showToast(`${preset.label} loaded`, 'success');
+        
+      } catch (error) {
+        showToast(`Error: ${error.message}`, 'error');
+      }
+    }
+    
+    // Natural language compilation and execution
+    async function executeCustomQuery() {
+      const textarea = document.getElementById('custom-query');
+      const query = textarea.value.trim();
+      
+      if (!query) {
+        showToast('Please enter a query', 'warning');
+        return;
+      }
+      
+      try {
+        // Compile natural language to procedure call
+        const compiler = new NLCompiler();
+        const compiled = compiler.compile(query);
+        
+        // Resolve params
+        const resolvedParams = resolvePresetParams(compiled.params);
+        
+        // Call API
+        const response = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            proc: compiled.proc,
+            params: resolvedParams
+          })
+        });
+        
+        const result = await response.json();
+        if (!result.ok) throw new Error(result.error);
+        
+        // Handle result like presets
+        if (compiled.proc === 'DASH_GET_METRICS') {
+          updateMetrics(result.data);
+        } else if (compiled.proc === 'DASH_GET_SERIES') {
+          updateChart('trend', formatSeriesData(result.data));
+          showMobilePanel('viz');
+        } else if (compiled.proc === 'DASH_GET_TOPN') {
+          updateChart('ranking', formatTopNData(result.data));
+          showMobilePanel('viz');
+        } else if (compiled.proc === 'DASH_GET_EVENTS') {
+          result.data.forEach(event => addToActivityFeed(event));
+          showMobilePanel('stream');
+        }
+        
+        showToast(`Query executed: ${compiler.generateTitle(compiled)}`, 'success');
+        textarea.value = '';
+        
+      } catch (error) {
+        showToast(`Error: ${error.message}`, 'error');
+      }
+    }
+    
+    // Save current query as dashboard
+    async function saveAsDashboard() {
+      const query = document.getElementById('custom-query').value.trim();
+      if (!query) {
+        showToast('Enter a query first', 'warning');
+        return;
+      }
+      
+      try {
+        const compiler = new NLCompiler();
+        const compiled = compiler.compile(query);
+        const title = compiler.generateTitle(compiled);
+        
+        // Create dashboard spec
+        const spec = {
+          panels: [{
+            id: 'main',
+            type: compiled.proc === 'DASH_GET_METRICS' ? 'metrics' : 
+                  compiled.proc === 'DASH_GET_SERIES' ? 'series' :
+                  compiled.proc === 'DASH_GET_TOPN' ? 'topn' : 'events',
+            title: title,
+            proc: compiled.proc,
+            params: compiled.params
+          }]
+        };
+        
+        // Save dashboard
+        const dashboardId = 'dash_' + Date.now();
+        const response = await fetch('/api/dashboard/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dashboard_id: dashboardId,
+            title: title,
+            spec: spec,
+            refresh_interval_sec: 300
+          })
+        });
+        
+        const result = await response.json();
+        if (!result.ok) throw new Error(result.error);
+        
+        showToast(`Dashboard saved! URL: ${result.url}`, 'success');
+        
+        // Optionally open the dashboard
+        if (confirm('Open dashboard in new tab?')) {
+          window.open(result.url, '_blank');
+        }
+        
+      } catch (error) {
+        showToast(`Save failed: ${error.message}`, 'error');
+      }
+    }
+    
+    // Data formatting helpers
+    function formatSeriesData(data) {
+      if (!Array.isArray(data)) return { labels: [], values: [] };
+      return {
+        labels: data.map(d => formatTime(d.TIME_BUCKET || d.time_bucket)),
+        values: data.map(d => d.EVENT_COUNT || d.event_count || 0)
+      };
+    }
+    
+    function formatTopNData(data) {
+      if (!Array.isArray(data)) return { labels: [], values: [] };
+      return {
+        labels: data.map(d => d.ITEM || d.item || 'Unknown'),
+        values: data.map(d => d.COUNT || d.count || 0)
+      };
+    }
+  </script>
 </body>
 </html>

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Read stdin for push info
+while read local_ref local_sha remote_ref remote_sha; do
+  # Extract branch name
+  BRANCH=$(echo $local_ref | sed 's/refs\/heads\///')
+  
+  # Get remote URL (extract repo name)
+  REMOTE_URL=$(git config --get remote.origin.url || echo "unknown")
+  REMOTE=$(echo $REMOTE_URL | sed 's/.*[:/]\([^/]*\/[^/]*\)\.git$/\1/' | sed 's/.*[:/]\([^/]*\/[^/]*\)$/\1/')
+  
+  # Count commits being pushed
+  if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+    # New branch
+    COMMITS_AHEAD=$(git rev-list --count HEAD)
+  else
+    COMMITS_AHEAD=$(git rev-list --count $remote_sha..$local_sha 2>/dev/null || echo 0)
+  fi
+  
+  # Log push event
+  sf log \
+    --action "git.push" \
+    --object "branch:$BRANCH" \
+    --attrs "{
+      \"remote\": \"$REMOTE\",
+      \"commits_ahead\": $COMMITS_AHEAD,
+      \"from_sha\": \"${remote_sha:0:8}\",
+      \"to_sha\": \"${local_sha:0:8}\"
+    }" \
+    2>/dev/null || true
+done

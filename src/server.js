@@ -35,7 +35,12 @@ app.get('/', (req, res) => {
   res.redirect('/dashboard.html');
 });
 
-// Static files (after redirect)
+// Dashboard viewer route - must come before static files
+app.get('/d/:dashboardId', (req, res) => {
+  res.sendFile(path.join(__dirname, '../ui/viewer.html'));
+});
+
+// Static files (after redirect and viewer route)
 app.use(express.static(path.join(__dirname, '../ui')));
 
 // Global connections
@@ -222,6 +227,89 @@ function startHttpServer() {
     } catch (error) {
       await activityLogger.log('sql_failed', { error: error.message });
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // New API endpoint for dashboard data (calls stored procedures)
+  app.post('/api/data', async (req, res) => {
+    try {
+      const { proc, params } = req.body;
+      
+      // Validate procedure name
+      const validProcs = ['DASH_GET_SERIES', 'DASH_GET_TOPN', 'DASH_GET_EVENTS', 'DASH_GET_METRICS'];
+      if (!validProcs.includes(proc)) {
+        throw new Error('Invalid procedure name');
+      }
+      
+      // Resolve SQL expressions in params
+      const resolvedParams = {};
+      for (const [key, value] of Object.entries(params || {})) {
+        if (value && typeof value === 'object' && value.sql_expr) {
+          // Execute SQL expression to get actual value
+          const result = await SnowflakeClient.execute(snowflakeConn, `SELECT ${value.sql_expr} AS val`);
+          resolvedParams[key] = result.rows[0].VAL;
+        } else {
+          resolvedParams[key] = value;
+        }
+      }
+      
+      // Build procedure call
+      const paramList = Object.keys(resolvedParams).map(k => '?').join(', ');
+      const sql = `CALL MCP.${proc}(${paramList})`;
+      
+      // Execute procedure
+      const result = await SnowflakeClient.execute(snowflakeConn, sql, Object.values(resolvedParams));
+      
+      // Parse result (procedures return VARIANT)
+      const procResult = result.rows[0][proc];
+      
+      res.json(procResult);
+      
+    } catch (error) {
+      console.error('API data error:', error);
+      res.status(500).json({ ok: false, error: error.message });
+    }
+  });
+
+  // Get dashboard specification
+  app.get('/api/dashboard/:dashboardId', async (req, res) => {
+    try {
+      const { dashboardId } = req.params;
+      
+      // Call GET_DASHBOARD procedure
+      const result = await SnowflakeClient.execute(
+        snowflakeConn, 
+        'CALL MCP.GET_DASHBOARD(?)', 
+        [dashboardId]
+      );
+      
+      const procResult = result.rows[0].GET_DASHBOARD;
+      res.json(procResult);
+      
+    } catch (error) {
+      console.error('Get dashboard error:', error);
+      res.status(500).json({ ok: false, error: error.message });
+    }
+  });
+
+  // Save dashboard
+  app.post('/api/dashboard/save', async (req, res) => {
+    try {
+      const { dashboard_id, title, spec, refresh_interval_sec } = req.body;
+      
+      // Call SAVE_DASHBOARD procedure
+      const result = await SnowflakeClient.execute(
+        snowflakeConn,
+        'CALL MCP.SAVE_DASHBOARD(?, ?, ?, ?)',
+        [dashboard_id, title, spec, refresh_interval_sec || 300]
+      );
+      
+      const procResult = result.rows[0].SAVE_DASHBOARD;
+      res.json(procResult);
+      
+    } catch (error) {
+      console.error('Save dashboard error:', error);
+      res.status(500).json({ ok: false, error: error.message });
     }
   });
   

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Get commit info
+COMMIT_SHA=$(git rev-parse HEAD)
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+FILES_CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD | wc -l | tr -d ' ')
+
+# Get insertion/deletion stats
+STATS=$(git diff-tree --no-commit-id --numstat -r HEAD | awk '{ins+=$1; del+=$2} END {print (ins+0)","(del+0)}')
+INSERTIONS=$(echo $STATS | cut -d',' -f1)
+DELETIONS=$(echo $STATS | cut -d',' -f2)
+
+# Get commit message (first line, escape quotes)
+MESSAGE=$(git log -1 --pretty=%B | head -1 | sed 's/"/\\"/g')
+
+# Log to Snowflake via sf command
+# Use 2>/dev/null || true to not fail commits if logging fails
+sf log \
+  --action "git.commit" \
+  --object "commit:$COMMIT_SHA" \
+  --attrs "{
+    \"branch\": \"$BRANCH\",
+    \"files_changed\": $FILES_CHANGED,
+    \"insertions\": ${INSERTIONS:-0},
+    \"deletions\": ${DELETIONS:-0},
+    \"message_preview\": \"${MESSAGE:0:100}\"
+  }" \
+  --dedupe "$COMMIT_SHA" \
+  2>/dev/null || true
