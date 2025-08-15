@@ -3,6 +3,7 @@ import { SnowflakeClient } from '../clients/snowflake-client.js';
 import { SqlRenderer } from '../renderers/sql-renderer.js';
 import { SecurityValidator } from '../validators/security-validator.js';
 import { loadSchemaContract } from '../utils/schema-loader.js';
+import { UserContext } from '../auth/token-authenticator.js';
 
 // Input schema for the tool
 const ComposeQueryPlanInputSchema = z.object({
@@ -23,7 +24,8 @@ const ComposeQueryPlanInputSchema = z.object({
   order_by: z.array(z.object({
     column: z.string(),
     direction: z.enum(['ASC', 'DESC'])
-  })).optional()
+  })).optional(),
+  token: z.string().optional().describe('Authentication token')
 });
 
 // Query plan interface
@@ -44,7 +46,7 @@ export const composeQueryPlanTool = {
   description: 'Compose and execute a validated query plan based on natural language intent',
   inputSchema: ComposeQueryPlanInputSchema.strict(),
   
-  async execute(args: z.infer<typeof ComposeQueryPlanInputSchema>, client: SnowflakeClient) {
+  async execute(args: z.infer<typeof ComposeQueryPlanInputSchema>, client: SnowflakeClient, userContext?: UserContext | null) {
     try {
       // Load schema contract
       const contract = await loadSchemaContract();
@@ -78,7 +80,7 @@ export const composeQueryPlanTool = {
       };
       
       // Validate plan against schema contract
-      const validation = validateQueryPlan(plan, contract);
+      const validation = validateQueryPlan(plan, contract, userContext);
       if (!validation.valid) {
         return {
           success: false,
@@ -105,18 +107,44 @@ export const composeQueryPlanTool = {
         };
       }
       
+      // Apply user row limit if authenticated
+      if (userContext && (!plan.top_n || plan.top_n > userContext.maxRows)) {
+        plan.top_n = userContext.maxRows;
+        // Re-render SQL with user limit
+        plan.sql = renderer.renderQueryPlan(plan);
+      }
+      
       // Execute query
       const startTime = Date.now();
-      const result = await client.executeQuery(sql);
+      const result = await client.executeQuery(plan.sql || sql);
       const executionTime = Date.now() - startTime;
+      const executionSeconds = Math.round(executionTime / 1000);
       
       // Log activity
       await client.logActivity('ccode.query_executed', {
         plan,
         execution_time_ms: executionTime,
         rows_returned: result.rows.length,
-        bytes_scanned: result.bytesScanned
+        bytes_scanned: result.bytesScanned,
+        authenticated_user: userContext?.username
       });
+      
+      // Log usage for authenticated user
+      if (userContext) {
+        const tokenAuth = client.tokenAuth;
+        if (tokenAuth) {
+          await tokenAuth.logToolExecution(
+            userContext.username,
+            'compose_query_plan',
+            true,
+            executionSeconds,
+            {
+              rows_returned: result.rows.length,
+              bytes_scanned: result.bytesScanned
+            }
+          );
+        }
+      }
       
       return {
         success: true,
@@ -193,7 +221,7 @@ function getAvailableSources(contract: any): string[] {
   return sources;
 }
 
-function validateQueryPlan(plan: QueryPlan, contract: any): { valid: boolean; errors?: string[] } {
+function validateQueryPlan(plan: QueryPlan, contract: any, userContext?: UserContext | null): { valid: boolean; errors?: string[] } {
   const errors: string[] = [];
   
   // Validate source exists
@@ -244,9 +272,10 @@ function validateQueryPlan(plan: QueryPlan, contract: any): { valid: boolean; er
     errors.push(`Invalid time grain: ${plan.grain}`);
   }
   
-  // Check row limit
-  if (plan.top_n && plan.top_n > contract.security.max_rows_per_query) {
-    errors.push(`Row limit ${plan.top_n} exceeds maximum ${contract.security.max_rows_per_query}`);
+  // Check row limit against contract and user context
+  const maxRows = userContext?.maxRows || contract.security.max_rows_per_query;
+  if (plan.top_n && plan.top_n > maxRows) {
+    errors.push(`Row limit ${plan.top_n} exceeds maximum ${maxRows}`);
   }
   
   return { valid: errors.length === 0, errors: errors.length > 0 ? errors : undefined };

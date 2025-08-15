@@ -1,6 +1,7 @@
 import snowflake from 'snowflake-sdk';
 import { SecurityValidator } from '../validators/security-validator.js';
 import { loadSchemaContract } from '../utils/schema-loader.js';
+import { TokenAuthenticator } from '../auth/token-authenticator.js';
 
 export interface QueryResult {
   rows: any[];
@@ -12,6 +13,7 @@ export class SnowflakeClient {
   private connection: any;
   private connected: boolean = false;
   private securityValidator: SecurityValidator | null = null;
+  public tokenAuth: TokenAuthenticator | null = null;
   
   async connect(): Promise<void> {
     if (this.connected) {

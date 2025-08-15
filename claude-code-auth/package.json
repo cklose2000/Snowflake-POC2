@@ -1,0 +1,27 @@
+{
+  "name": "claude-code-auth",
+  "version": "1.0.0",
+  "description": "Claude Code authentication helper for secure token storage",
+  "main": "claude-code-pair.js",
+  "bin": {
+    "claude-code": "./claude-code-pair.js"
+  },
+  "scripts": {
+    "test": "node claude-code-pair.js status"
+  },
+  "keywords": [
+    "claude-code",
+    "authentication",
+    "keychain",
+    "security"
+  ],
+  "author": "Claude Code Team",
+  "license": "MIT",
+  "dependencies": {
+    "keytar": "^7.9.0",
+    "commander": "^11.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

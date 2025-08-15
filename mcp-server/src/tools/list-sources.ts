@@ -1,16 +1,18 @@
 import { z } from 'zod';
 import { SnowflakeClient } from '../clients/snowflake-client.js';
 import { loadSchemaContract, getSourceColumns } from '../utils/schema-loader.js';
+import { UserContext } from '../auth/token-authenticator.js';
 
 const ListSourcesInputSchema = z.object({
-  include_columns: z.boolean().optional().describe('Include column information for each source')
+  include_columns: z.boolean().optional().describe('Include column information for each source'),
+  token: z.string().optional().describe('Authentication token')
 });
 
 export const listSourcesTool = {
   description: 'List all available data sources (views and tables) with their schemas',
   inputSchema: ListSourcesInputSchema.strict(),
   
-  async execute(args: z.infer<typeof ListSourcesInputSchema>, client: SnowflakeClient) {
+  async execute(args: z.infer<typeof ListSourcesInputSchema>, client: SnowflakeClient, userContext?: UserContext | null) {
     try {
       const contract = await loadSchemaContract();
       const sources: any[] = [];

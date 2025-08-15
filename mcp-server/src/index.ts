@@ -12,6 +12,7 @@ import { createDashboardTool } from './tools/create-dashboard.js';
 import { listSourcesTool } from './tools/list-sources.js';
 import { validatePlanTool } from './tools/validate-plan.js';
 import { SnowflakeClient } from './clients/snowflake-client.js';
+import { TokenAuthenticator } from './auth/token-authenticator.js';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -34,8 +35,9 @@ const server = new Server(
   }
 );
 
-// Initialize Snowflake client
+// Initialize Snowflake client and auth
 let snowflakeClient: SnowflakeClient;
+let tokenAuth: TokenAuthenticator;
 
 // Tool registry
 const tools = {
@@ -69,14 +71,36 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   try {
-    // Ensure Snowflake client is initialized
+    // Ensure Snowflake client and auth are initialized
     if (!snowflakeClient) {
       snowflakeClient = new SnowflakeClient();
       await snowflakeClient.connect();
     }
+    
+    if (!tokenAuth) {
+      tokenAuth = new TokenAuthenticator(snowflakeClient);
+      snowflakeClient.tokenAuth = tokenAuth;
+    }
 
-    // Execute tool with Snowflake client
-    const result = await tool.execute(args as any, snowflakeClient);
+    // Extract token from args if present
+    const token = (args as any)?.token;
+    let userContext = null;
+    
+    if (token) {
+      // Authenticate and get user context
+      userContext = await tokenAuth.authenticate(token);
+      
+      // Check if user is allowed to use this tool
+      if (!userContext.allowedTools.includes(name)) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `Tool ${name} not allowed for this user`
+        );
+      }
+    }
+
+    // Execute tool with Snowflake client and user context
+    const result = await tool.execute(args as any, snowflakeClient, userContext);
     
     return {
       content: [

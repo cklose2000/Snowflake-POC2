@@ -8,49 +8,53 @@ import { ServiceCredentials } from './types';
 export async function getServiceCredentials(): Promise<ServiceCredentials> {
   try {
     // Validate required environment variables
-    const requiredEnvVars = [
-      'SNOWFLAKE_ACCOUNT',
-      'MCP_SERVICE_USER', 
-      'SF_PK_PATH'
-    ];
+    const account = process.env.SNOWFLAKE_ACCOUNT;
+    const username = process.env.MCP_SERVICE_USER;
     
-    for (const envVar of requiredEnvVars) {
-      if (!process.env[envVar]) {
-        throw new Error(`Missing required environment variable: ${envVar}`);
-      }
+    if (!account) {
+      throw new Error('Missing required environment variable: SNOWFLAKE_ACCOUNT');
     }
     
-    // Read private key from file
-    let privateKey: Buffer;
-    try {
-      privateKey = fs.readFileSync(process.env.SF_PK_PATH!);
-    } catch (error) {
-      throw new Error(`Failed to read private key from ${process.env.SF_PK_PATH}: ${error.message}`);
+    if (!username) {
+      throw new Error('Missing required environment variable: MCP_SERVICE_USER');
     }
     
-    // Get passphrase from environment or keychain
-    let privateKeyPass = process.env.SF_PK_PASSPHRASE;
-    if (!privateKeyPass) {
-      try {
-        const keytar = require('keytar');
-        privateKeyPass = await keytar.getPassword('SnowflakeMCP', 'service_key_passphrase');
-      } catch (error) {
-        // Optional passphrase - some keys may not have one
-        console.warn('No passphrase found for private key');
-      }
-    }
-    
-    return {
-      account: process.env.SNOWFLAKE_ACCOUNT!,          // e.g. "uec18397.us-east-1"
-      username: process.env.MCP_SERVICE_USER!,          // "MCP_SERVICE_USER"
-      privateKey,                                       // Buffer from PEM file
-      privateKeyPass,                                   // Optional passphrase
-      authenticator: 'SNOWFLAKE_JWT',                   // Key-pair auth
+    const base = {
+      account,
+      username,
       role: process.env.MCP_SERVICE_ROLE || 'MCP_SERVICE_ROLE',
-      warehouse: process.env.MCP_SERVICE_WAREHOUSE || 'MCP_XS_WH',
+      warehouse: process.env.MCP_SERVICE_WAREHOUSE || 'CLAUDE_WAREHOUSE',
       database: process.env.SNOWFLAKE_DATABASE || 'CLAUDE_BI',
-      clientSessionKeepAlive: true                      // Prevent mid-session drops
+      clientSessionKeepAlive: true
     };
+
+    // Priority order: key-pair (if SF_PK_PATH exists), else password, else error
+    if (process.env.SF_PK_PATH) {
+      // Key-pair authentication
+      let privateKey: string;
+      try {
+        privateKey = fs.readFileSync(process.env.SF_PK_PATH, 'utf8');
+      } catch (error) {
+        throw new Error(`Failed to read private key from ${process.env.SF_PK_PATH}: ${error.message}`);
+      }
+
+      return {
+        ...base,
+        privateKey,
+        privateKeyPass: process.env.SF_PK_PASSPHRASE,
+        authenticator: 'SNOWFLAKE_JWT'
+      } as ServiceCredentials;
+      
+    } else if (process.env.MCP_SERVICE_PASSWORD) {
+      // Password authentication (fallback)
+      return {
+        ...base,
+        password: process.env.MCP_SERVICE_PASSWORD
+      } as ServiceCredentials;
+      
+    } else {
+      throw new Error('No auth configured: set SF_PK_PATH (preferred) or MCP_SERVICE_PASSWORD');
+    }
     
   } catch (error) {
     throw new Error(`Failed to load service credentials: ${error.message}`);

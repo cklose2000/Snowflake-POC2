@@ -1,9 +1,13 @@
 export interface ServiceCredentials {
   account: string;
   username: string;
-  privateKey: Buffer;
+  // Key-pair auth
+  privateKey?: string;  // PEM string, not Buffer
   privateKeyPass?: string;
-  authenticator: string;
+  authenticator?: string;
+  // Password auth (fallback)
+  password?: string;
+  // Common fields
   role: string;
   warehouse: string;
   database: string;
