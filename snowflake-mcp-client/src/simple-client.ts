@@ -5,7 +5,7 @@
 
 import * as snowflake from 'snowflake-sdk';
 import * as fs from 'fs';
-import { Connection, Statement } from 'snowflake-sdk';
+import { Connection } from 'snowflake-sdk';
 
 export interface ClientConfig {
   account?: string;
@@ -29,23 +29,57 @@ export interface QueryResult {
   };
 }
 
+export interface LogEvent {
+  action: string;
+  session_id?: string;
+  actor_id?: string;
+  attributes?: Record<string, any>;
+  object?: {
+    type: string;
+    id: string;
+  };
+  occurred_at?: string;
+}
+
+export interface LogConfig {
+  batchThreshold?: number;  // Switch to batch mode above this events/min
+  flushIntervalMs?: number;  // Auto-flush interval for batched events
+  maxBatchSize?: number;     // Maximum events per batch
+}
+
 export class SnowflakeSimpleClient {
   private connection: Connection | null = null;
   private config: ClientConfig;
   private isConnected: boolean = false;
+  
+  // Logging state
+  private eventBuffer: LogEvent[] = [];
+  private flushTimer: NodeJS.Timeout | null = null;
+  private eventCounts: Map<string, number> = new Map();
+  private lastCountReset: number = Date.now();
+  private logConfig: LogConfig = {
+    batchThreshold: 10,    // Events per minute to trigger batch mode
+    flushIntervalMs: 5000,  // Flush every 5 seconds
+    maxBatchSize: 100       // Max events per batch
+  };
 
-  constructor(config?: ClientConfig) {
+  constructor(config?: ClientConfig, logConfig?: LogConfig) {
     // Load from environment if not provided
     this.config = {
       account: config?.account || process.env.SNOWFLAKE_ACCOUNT,
       username: config?.username || process.env.SNOWFLAKE_USERNAME,
       password: config?.password || process.env.SNOWFLAKE_PASSWORD,
       privateKeyPath: config?.privateKeyPath || process.env.SF_PK_PATH,
-      role: config?.role || process.env.SNOWFLAKE_ROLE,
-      warehouse: config?.warehouse || process.env.SNOWFLAKE_WAREHOUSE || 'CLAUDE_WAREHOUSE',
+      // Note: Role should be set as DEFAULT_ROLE on the user, not in config
+      warehouse: config?.warehouse || process.env.SNOWFLAKE_WAREHOUSE || 'CLAUDE_AGENT_WH',
       database: config?.database || process.env.SNOWFLAKE_DATABASE || 'CLAUDE_BI',
       schema: config?.schema || process.env.SNOWFLAKE_SCHEMA || 'MCP'
     };
+    
+    // Merge log config
+    if (logConfig) {
+      this.logConfig = { ...this.logConfig, ...logConfig };
+    }
 
     // Validate required fields
     if (!this.config.account) {
@@ -68,10 +102,10 @@ export class SnowflakeSimpleClient {
     const connectionOptions: any = {
       account: this.config.account,
       username: this.config.username,
-      role: this.config.role,
       warehouse: this.config.warehouse,
       database: this.config.database,
       schema: this.config.schema
+      // Role is intentionally omitted - use DEFAULT_ROLE on user
     };
 
     // Use key-pair auth if private key path provided
@@ -100,8 +134,8 @@ export class SnowflakeSimpleClient {
           this.isConnected = true;
           console.log(`✅ Connected to Snowflake as ${this.config.username}`);
           
-          // Set query tag for observability
-          this.setQueryTag().then(() => resolve()).catch(reject);
+          // Set initial query tag for observability
+          this.setQueryTag('session_init').then(() => resolve()).catch(reject);
         }
       });
     });
@@ -110,11 +144,12 @@ export class SnowflakeSimpleClient {
   /**
    * Set query tag for observability
    */
-  private async setQueryTag(): Promise<void> {
+  private async setQueryTag(operation: string = 'session_init', sessionId?: string): Promise<void> {
     const tag = {
-      client: 'snowflake-mcp-simple',
+      agent: 'claude-code',
+      op: operation,
+      sess: sessionId || 'default',
       user: this.config.username,
-      role: this.config.role,
       timestamp: new Date().toISOString()
     };
 
@@ -133,7 +168,7 @@ export class SnowflakeSimpleClient {
       this.connection!.execute({
         sqlText,
         binds,
-        complete: (err: any, stmt: Statement, rows: any[]) => {
+        complete: (err: any, stmt: any, rows: any[]) => {
           if (err) {
             reject(err);
           } else {
@@ -151,11 +186,25 @@ export class SnowflakeSimpleClient {
     await this.connect();
     
     const startTime = Date.now();
-    const placeholders = args.map(() => '?').join(', ');
+    // Convert objects to JSON strings for VARIANT parameters
+    const processedArgs = args.map(arg => {
+      if (typeof arg === 'object' && arg !== null) {
+        return JSON.stringify(arg);
+      }
+      return arg;
+    });
+    
+    // Build placeholders - use PARSE_JSON for object arguments
+    const placeholders = args.map((arg, i) => {
+      if (typeof arg === 'object' && arg !== null) {
+        return 'PARSE_JSON(?)';
+      }
+      return '?';
+    }).join(', ');
     const sql = `CALL ${procedureName}(${placeholders})`;
 
     try {
-      const result = await this.execute(sql, args);
+      const result = await this.execute(sql, processedArgs);
       const executionTime = Date.now() - startTime;
 
       // Parse result (procedures return single row with variant)
@@ -287,9 +336,165 @@ export class SnowflakeSimpleClient {
   }
 
   /**
+   * Log a single event using direct SP call
+   */
+  async logEvent(event: LogEvent, sessionId?: string): Promise<QueryResult> {
+    await this.connect();
+    
+    // Track event rate
+    this.trackEventRate(event.action);
+    
+    // Check if we should batch
+    if (this.shouldUseBatchMode()) {
+      return this.addToBatch(event);
+    }
+    
+    // Set query tag for this operation
+    await this.setQueryTag('log_event', sessionId || event.session_id);
+    
+    // Direct SP call
+    return this.callProcedure('CLAUDE_BI.MCP.LOG_CLAUDE_EVENT', event, 'CLAUDE_CODE');
+  }
+  
+  /**
+   * Log multiple events in batch
+   */
+  async logEventsBatch(events: LogEvent[], sessionId?: string): Promise<QueryResult> {
+    await this.connect();
+    
+    // Set query tag
+    await this.setQueryTag('log_batch', sessionId);
+    
+    // Call batch procedure
+    return this.callProcedure('CLAUDE_BI.MCP.LOG_CLAUDE_EVENTS_BATCH', events, 'CLAUDE_CODE');
+  }
+  
+  /**
+   * Track event rate for auto-batching
+   */
+  private trackEventRate(action: string): void {
+    const now = Date.now();
+    
+    // Reset counts every minute
+    if (now - this.lastCountReset > 60000) {
+      this.eventCounts.clear();
+      this.lastCountReset = now;
+    }
+    
+    // Increment count
+    const count = (this.eventCounts.get(action) || 0) + 1;
+    this.eventCounts.set(action, count);
+  }
+  
+  /**
+   * Check if we should use batch mode based on event rate
+   */
+  private shouldUseBatchMode(): boolean {
+    let totalEvents = 0;
+    for (const count of this.eventCounts.values()) {
+      totalEvents += count;
+    }
+    
+    // Events per minute (extrapolated)
+    const elapsedMs = Date.now() - this.lastCountReset;
+    const eventsPerMinute = (totalEvents / elapsedMs) * 60000;
+    
+    return eventsPerMinute > this.logConfig.batchThreshold!;
+  }
+  
+  /**
+   * Add event to batch buffer
+   */
+  private async addToBatch(event: LogEvent): Promise<QueryResult> {
+    this.eventBuffer.push(event);
+    
+    // Flush if buffer is full
+    if (this.eventBuffer.length >= this.logConfig.maxBatchSize!) {
+      return this.flushBatch();
+    }
+    
+    // Schedule flush if not already scheduled
+    if (!this.flushTimer) {
+      this.flushTimer = setTimeout(() => {
+        this.flushBatch().catch(err => {
+          console.error('Batch flush failed:', err);
+        });
+      }, this.logConfig.flushIntervalMs);
+    }
+    
+    return {
+      success: true,
+      data: { buffered: true, bufferSize: this.eventBuffer.length }
+    };
+  }
+  
+  /**
+   * Flush buffered events
+   */
+  async flushBatch(): Promise<QueryResult> {
+    if (this.eventBuffer.length === 0) {
+      return { success: true, data: { flushed: 0 } };
+    }
+    
+    // Clear timer
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    
+    // Get events to flush
+    const events = [...this.eventBuffer];
+    this.eventBuffer = [];
+    
+    // Send batch
+    return this.logEventsBatch(events);
+  }
+  
+  /**
+   * Log session start
+   */
+  async logSessionStart(sessionId: string, metadata?: Record<string, any>): Promise<QueryResult> {
+    return this.logEvent({
+      action: 'ccode.session.started',
+      session_id: sessionId,
+      attributes: {
+        ...metadata,
+        started_at: new Date().toISOString()
+      }
+    });
+  }
+  
+  /**
+   * Log session end and flush any pending events
+   */
+  async logSessionEnd(sessionId: string, metadata?: Record<string, any>): Promise<QueryResult> {
+    // Flush any pending events first
+    if (this.eventBuffer.length > 0) {
+      await this.flushBatch();
+    }
+    
+    // Log end event
+    return this.logEvent({
+      action: 'ccode.session.ended',
+      session_id: sessionId,
+      attributes: {
+        ...metadata,
+        ended_at: new Date().toISOString()
+      }
+    });
+  }
+  
+  /**
    * Disconnect from Snowflake
    */
   async disconnect(): Promise<void> {
+    // Flush any pending events
+    if (this.eventBuffer.length > 0) {
+      await this.flushBatch().catch(err => {
+        console.error('Failed to flush on disconnect:', err);
+      });
+    }
+    
     if (!this.connection || !this.isConnected) return;
 
     return new Promise((resolve) => {

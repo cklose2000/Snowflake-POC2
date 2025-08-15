@@ -1,6 +1,6 @@
-# Snowflake POC2 - Native Authentication with Two-Table Architecture
+# Snowflake POC2 - Native Authentication with Claude Code Logging
 
-**Pure 2-table architecture. Native Snowflake auth. Production-ready.**
+**Pure 2-table architecture. Native Snowflake auth. Claude Code logging via RSA keys. Production-ready.**
 
 ## 🔐 Authentication: Native Snowflake Users & Roles
 
@@ -81,6 +81,8 @@ ACCOUNTADMIN
 |-----------|------|---------|---------------|
 | `PROVISION_ACTOR` | OWNER | Create users | R_APP_ADMIN |
 | `SAFE_INSERT_EVENT` | OWNER + Guard | Insert events | R_APP_WRITE |
+| `LOG_CLAUDE_EVENT` | OWNER + Guard | Log Claude Code events | R_APP_WRITE |
+| `LOG_CLAUDE_EVENTS_BATCH` | OWNER + Guard | Batch event logging | R_APP_WRITE |
 | `LIST_SOURCES` | CALLER | List data sources | R_APP_READ |
 
 ## 📁 Structure
@@ -90,7 +92,10 @@ scripts/native-auth/
 ├── 01_security_foundation.sql   # Roles, policies, grants
 ├── 02_provision_actor.sql       # User provisioning
 ├── 03_workload_procedures.sql   # Core procedures
-└── 04_provision_users.sql       # Test users
+├── 04_logging_procedures.sql    # Claude Code logging
+├── 05_dynamic_tables.sql        # Dynamic table & monitors
+├── 06_monitoring_views.sql      # Observability views
+└── Test users & verification scripts
 
 snowflake-mcp-client/
 ├── src/
@@ -192,13 +197,55 @@ SNOWFLAKE_WAREHOUSE=CLAUDE_AGENT_WH
 - ❌ **NEVER share credentials** - Each user gets their own
 - ❌ **NEVER skip key rotation** - Monthly for agents
 
+## 🔍 Claude Code Logging Integration
+
+### Full Observability with RSA Authentication
+
+Claude Code (AI agent) connects via RSA key authentication and logs all operations:
+
+```javascript
+// All Claude Code operations are logged automatically
+const client = new SnowflakeSimpleClient({
+  account: 'your-account',
+  username: 'CLAUDE_CODE_AI_AGENT',
+  privateKeyPath: './claude_code_rsa_key.p8',
+  warehouse: 'CLAUDE_AGENT_WH'
+});
+
+// Direct logging via stored procedure
+await client.logEvent({
+  action: 'ccode.query.executed',
+  session_id: sessionId,
+  attributes: { /* metadata */ }
+});
+```
+
+### Logging Features
+
+- **Auto-batching**: Switches to batch mode at high volume
+- **Query tagging**: Structured tags for every operation
+- **Session tracking**: Full session lifecycle logging
+- **Error tracking**: Automatic error event capture
+- **Performance metrics**: Execution times and resource usage
+
+### Recent Activity Query
+
+```sql
+-- View last 10 events
+SELECT * FROM CLAUDE_BI.ACTIVITY.EVENTS 
+ORDER BY OCCURRED_AT DESC 
+LIMIT 10;
+```
+
 ## ✨ Ready to Use
 
 The system is fully deployed with:
 - Native Snowflake authentication
-- Test users provisioned
-- RSA key-pair for Claude Code agent
-- All procedures working
-- Complete audit trail
+- Claude Code agent with RSA key-pair auth
+- Production logging procedures (LOG_CLAUDE_EVENT)
+- Dynamic table with 1-minute refresh
+- Resource monitors and credit limits
+- Complete audit trail with query tagging
+- 7 monitoring views for observability
 
-Just connect and start using it!
+**All operations through Claude Code are automatically logged!**
