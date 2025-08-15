@@ -32,3 +32,8 @@ temp/
 src/generated-schema.js
 generated-dashboards/*.pem
 *.pub
+.env
+.env.*
+!.env.example
+!.env.claude_code.example
+.claude/settings.local.json

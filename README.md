@@ -17,8 +17,8 @@ This system uses **native Snowflake authentication** - no custom tokens, no gate
 ### 1. Deploy Native Auth System
 
 ```bash
-# As Snowflake admin (use admin2 / Admin2Pass2024)
-snowsql -a uec18397.us-east-1 -u admin2 -r ACCOUNTADMIN << 'EOF'
+# As Snowflake admin
+snowsql -a <your-account> -u <admin-user> -r ACCOUNTADMIN << 'EOF'
 -- Run the native auth setup scripts
 -- See scripts/native-auth/ for details
 EOF
@@ -27,11 +27,11 @@ EOF
 ### 2. For Humans (Password Auth)
 
 ```bash
-# Use Sarah's credentials
-export SNOWFLAKE_ACCOUNT=uec18397.us-east-1
-export SNOWFLAKE_USERNAME=SARAH_COMPANY_COM
-export SNOWFLAKE_PASSWORD=TempPassword123
-export SNOWFLAKE_ROLE=R_ACTOR_HUM_b969ab99
+# Set credentials (see .env.example)
+export SNOWFLAKE_ACCOUNT=<your-account>
+export SNOWFLAKE_USERNAME=<username>
+export SNOWFLAKE_PASSWORD=<password>
+export SNOWFLAKE_ROLE=<role>
 export SNOWFLAKE_WAREHOUSE=CLAUDE_WAREHOUSE
 
 # Test connection
@@ -41,11 +41,11 @@ snowsql -q "SELECT CURRENT_USER()"
 ### 3. For AI Agents (Key-Pair Auth)
 
 ```bash
-# Use Claude Code agent with RSA key
-export SNOWFLAKE_ACCOUNT=uec18397.us-east-1
-export SNOWFLAKE_USERNAME=CLAUDE_CODE_AI_AGENT
-export SF_PK_PATH=./claude_code_rsa_key.p8
-export SNOWFLAKE_ROLE=R_ACTOR_AGT_10450ec3
+# Set credentials (see .env.claude_code.example)
+export SNOWFLAKE_ACCOUNT=<your-account>
+export SNOWFLAKE_USERNAME=<agent-username>
+export SF_PK_PATH=/path/to/private_key.p8
+export SNOWFLAKE_ROLE=<agent-role>
 export SNOWFLAKE_WAREHOUSE=CLAUDE_AGENT_WH
 
 # Test connection
@@ -103,16 +103,16 @@ NATIVE_AUTH.md                   # Complete auth guide
 
 ## 🧪 Test Users
 
-### Sarah (Human, Read-Only)
-- Username: `SARAH_COMPANY_COM`
-- Password: `TempPassword123`
-- Role: `R_ACTOR_HUM_b969ab99`
+### Example: Human User (Read-Only)
+- Username: Generated from email
+- Password: Set during provisioning
+- Role: `R_ACTOR_HUM_<hash>`
 - Permissions: Read only
 
-### Claude Code (AI Agent, Read-Write)
-- Username: `CLAUDE_CODE_AI_AGENT`
-- Auth: RSA key-pair (`claude_code_rsa_key.p8`)
-- Role: `R_ACTOR_AGT_10450ec3`
+### Example: AI Agent (Read-Write)
+- Username: Generated from email
+- Auth: RSA key-pair
+- Role: `R_ACTOR_AGT_<hash>`
 - Permissions: Read + Write
 
 ## 🚀 Using the Simple Client
@@ -167,8 +167,8 @@ The old token-based authentication has been replaced with native Snowflake auth.
 ## 📊 Connection Details
 
 ```bash
-# Environment Variables
-SNOWFLAKE_ACCOUNT=uec18397.us-east-1
+# Environment Variables (see .env.example)
+SNOWFLAKE_ACCOUNT=<your-account>
 SNOWFLAKE_DATABASE=CLAUDE_BI
 SNOWFLAKE_SCHEMA=MCP
 

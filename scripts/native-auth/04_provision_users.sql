@@ -16,7 +16,7 @@ CALL PROVISION_ACTOR(
   'HUMAN',                        -- actor_type  
   FALSE,                          -- can_write (read-only for analyst)
   'PASSWORD',                     -- auth_mode
-  'TempPassword123!@#'            -- initial_secret (must change on first login)
+  '<set-initial-password>'        -- initial_secret (must change on first login)
 );
 
 -- The output will show:
@@ -87,7 +87,7 @@ CALL PROVISION_ACTOR(
   'HUMAN',                        -- actor_type
   TRUE,                           -- can_write (data engineer needs write)
   'PASSWORD',                     -- auth_mode
-  'EngineerPass456$%^'            -- initial_secret
+  '<set-initial-password>'        -- initial_secret
 );
 
 -- ============================================================================

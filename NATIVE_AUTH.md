@@ -31,7 +31,7 @@ CALL CLAUDE_BI.ADMIN.PROVISION_ACTOR(
   'HUMAN',                 -- actor type
   FALSE,                   -- can_write (read-only)
   'PASSWORD',              -- auth mode
-  'TempPassword123!@#'     -- initial password
+  '<initial-password>'     -- initial password
 );
 ```
 
@@ -82,11 +82,11 @@ SET RSA_PUBLIC_KEY = '<public_key_content>';
 ### Human User (.env)
 
 ```bash
-# Sarah - Marketing Analyst
-SNOWFLAKE_ACCOUNT=your-account.us-east-1
-SNOWFLAKE_USERNAME=SARAH_COMPANY_COM
-SNOWFLAKE_PASSWORD=<password_after_change>
-SNOWFLAKE_ROLE=R_ACTOR_HUM_ABC12345
+# Example Human User
+SNOWFLAKE_ACCOUNT=<your-account>
+SNOWFLAKE_USERNAME=<username>
+SNOWFLAKE_PASSWORD=<password>
+SNOWFLAKE_ROLE=R_ACTOR_HUM_<hash>
 SNOWFLAKE_WAREHOUSE=CLAUDE_WAREHOUSE
 SNOWFLAKE_DATABASE=CLAUDE_BI
 SNOWFLAKE_SCHEMA=MCP
@@ -95,11 +95,11 @@ SNOWFLAKE_SCHEMA=MCP
 ### AI Agent (.env)
 
 ```bash
-# Claude Code - AI Agent
-SNOWFLAKE_ACCOUNT=your-account.us-east-1
-SNOWFLAKE_USERNAME=CLAUDE_CODE_AI_AGENT
-SF_PK_PATH=/path/to/claude_code_key.p8
-SNOWFLAKE_ROLE=R_ACTOR_AGT_DEF67890
+# Example AI Agent
+SNOWFLAKE_ACCOUNT=<your-account>
+SNOWFLAKE_USERNAME=<agent-username>
+SF_PK_PATH=/path/to/private_key.p8
+SNOWFLAKE_ROLE=R_ACTOR_AGT_<hash>
 SNOWFLAKE_WAREHOUSE=CLAUDE_AGENT_WH
 SNOWFLAKE_DATABASE=CLAUDE_BI
 SNOWFLAKE_SCHEMA=MCP
