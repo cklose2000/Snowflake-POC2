@@ -12,6 +12,7 @@ Transform your Snowflake data into executive-ready dashboards with complete audi
 - **Zero Configuration** - Deploy once, use immediately with comprehensive monitoring
 - **Enterprise Security** - RSA key-pair authentication with complete audit trails
 - **Performance Optimized** - 4x faster response times with intelligent caching
+- **SDLC/Ticketing System** - Complete Jira-like ticketing system built entirely on events (no new tables)
 
 ## 🚀 Quick Start
 
@@ -57,6 +58,36 @@ sf exec-file scripts/my-analysis.sql        # Run analysis scripts
 - **Auto-Refresh**: Live updates every 5 minutes
 - **Natural Language**: Text-to-query with Claude API integration
 
+## 🎫 SDLC/Ticketing System (NEW!)
+
+### Complete Event-Driven Ticketing
+Built entirely on the Two-Table Law - no new tables, just events and views:
+
+- **Work Item Management**: Create, assign, track, and complete work items
+- **Smart Agent Assignment**: AI agents claim work based on skills and priority
+- **Dependency Tracking**: Manage complex work relationships with cycle detection
+- **Sprint Planning**: Full sprint lifecycle with velocity tracking
+- **SLA Monitoring**: Automatic escalation for breached deadlines
+- **Executive Dashboards**: Real-time velocity, quality, and bottleneck analysis
+
+### Key Features
+- **Optimistic Concurrency**: Handles multiple agents working simultaneously
+- **Complete Audit Trail**: Every action is an immutable event
+- **Performance Optimized**: Search optimization and clustering for fast queries
+- **Comprehensive Testing**: Full test suite with load testing capabilities
+
+### Quick Start
+```sql
+-- Create a work item
+CALL SDLC_CREATE_WORK('WORK-001', 'Build feature X', 'feature', 'p1', ...);
+
+-- Agent claims next available work
+CALL SDLC_CLAIM_NEXT('agent-claude', 'ai_developer', ARRAY['javascript']);
+
+-- Check executive dashboard
+SELECT * FROM VW_SDLC_EXECUTIVE_DASHBOARD;
+```
+
 ## 🏛️ The Two-Table Architecture
 
 This system is built on the **Two-Table Law** - a revolutionary approach that stores everything as events:
@@ -94,7 +125,16 @@ Enterprise Dashboard System/
 ├── 🚀 Performance Engine      # 4x optimized execution
 ├── 📱 Web Interface           # Executive dashboards
 ├── 🤖 Claude Code Gateway     # Controlled AI access
-└── 📋 Compliance Engine       # Two-Table Law enforcement
+├── 📋 Compliance Engine       # Two-Table Law enforcement
+└── 🎫 SDLC/Ticketing System  # Event-driven work management
+    ├── Event Taxonomy         # 15+ SDLC event types
+    ├── Core Views            # Work items, priority queue, history
+    ├── Procedures            # Concurrency-safe operations
+    ├── Agent Integration     # Smart work assignment
+    ├── Reporting Views       # Executive analytics
+    ├── Automation Tasks      # SLA monitoring, snapshots
+    ├── Performance Tuning    # Search optimization
+    └── Test Scenarios        # Comprehensive test suite
 ```
 
 ## 🎯 Performance Metrics
