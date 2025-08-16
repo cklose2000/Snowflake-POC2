@@ -1,46 +1,35 @@
 {
-  "name": "snowflake-poc2-core",
-  "version": "2.0.0",
-  "description": "Streamlined Dashboard Factory for Snowflake with Activity Schema v2.0",
-  "main": "src/server.js",
+  "name": "snowflake-enterprise-dashboard",
+  "version": "2.0.0", 
+  "description": "Production-ready dashboard & analytics platform with enforced Claude Code integration",
+  "main": "src/dashboard-server.js",
+  "keywords": ["snowflake", "dashboard", "analytics", "claude-code", "enterprise"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/snowflake-enterprise-dashboard.git"
+  },
   "scripts": {
-    "start": "sf log --action npm.start.begin 2>/dev/null; node src/server.js; code=$?; sf log --action npm.start.end --attrs '{\"exit_code\":'$code'}' 2>/dev/null; exit $code",
-    "_start": "node src/server.js",
-    "dashboard-server": "sf log --action npm.dashboard.begin 2>/dev/null; node src/dashboard-server.js; code=$?; sf log --action npm.dashboard.end --attrs '{\"exit_code\":'$code'}' 2>/dev/null; exit $code",
-    "_dashboard-server": "node src/dashboard-server.js",
-    "setup": "sf log --action npm.setup.begin 2>/dev/null; node scripts/setup.js; code=$?; sf log --action npm.setup.end --attrs '{\"exit_code\":'$code'}' 2>/dev/null; exit $code",
-    "_setup": "node scripts/setup.js",
-    "validate": "sf log --action npm.validate.begin 2>/dev/null; node scripts/validate.js; code=$?; sf log --action npm.validate.end --attrs '{\"exit_code\":'$code'}' 2>/dev/null; exit $code",
-    "_validate": "node scripts/validate.js",
-    "test": "sf log --action npm.test.begin 2>/dev/null; node tests/integration/test-dashboard.js; code=$?; sf log --action npm.test.end --attrs '{\"exit_code\":'$code'}' 2>/dev/null; exit $code",
-    "_test": "node tests/integration/test-dashboard.js",
-    "codegen": "sf log --action npm.codegen.begin 2>/dev/null; node scripts/codegen-schema.js; code=$?; sf log --action npm.codegen.end --attrs '{\"exit_code\":'$code'}' 2>/dev/null; exit $code",
-    "_codegen": "node scripts/codegen-schema.js",
-    "prestart": "npm run codegen",
+    "start": "node src/dashboard-server.js",
+    "dashboard": "node src/dashboard-server.js",
+    "setup": "node scripts/setup.js",
+    "validate": "node scripts/validate.js",
     
-    "_comment": "=== NEW UNIFIED CLI COMMANDS ===",
-    "deploy:auth:password": "node scripts/deploy/cli.js deploy:auth:password",
-    "deploy:auth:keypair": "node scripts/deploy/cli.js deploy:auth:keypair", 
-    "deploy:auth:unified": "node scripts/deploy/cli.js deploy:auth:unified",
+    "_comment_production": "=== PRODUCTION COMMANDS ===",
     "deploy:native": "node scripts/deploy/cli.js deploy:native",
-    "deploy:enhanced": "node scripts/deploy/cli.js deploy:enhanced",
-    "deploy:logging": "node scripts/deploy/cli.js deploy:logging",
+    "deploy:auth:keypair": "node scripts/deploy/cli.js deploy:auth:keypair",
+    "deploy:auth:password": "node scripts/deploy/cli.js deploy:auth:password",
     
+    "_comment_testing": "=== TESTING & VALIDATION ===", 
     "test:integration": "node scripts/deploy/cli.js test:integration",
-    "test:auth": "node scripts/deploy/cli.js test:auth",
-    "test:mcp": "node scripts/deploy/cli.js test:mcp",
     "test:connection": "node scripts/deploy/cli.js test:connection",
-    "test:logging": "node scripts/deploy/cli.js test:logging",
-    
     "check:guards": "node scripts/deploy/cli.js check:guards",
-    "check:events": "node scripts/deploy/cli.js check:events",
-    "check:privileges": "node scripts/deploy/cli.js check:privileges",
-    "check:tables": "node scripts/deploy/cli.js check:tables",
-    "verify:logging": "node scripts/deploy/cli.js verify:logging",
     
+    "_comment_sql": "=== SQL DEPLOYMENT ===",
     "sql:deploy": "node scripts/deploy/cli.js sql:deploy",
+    
+    "_comment_utilities": "=== UTILITIES ===",
     "help": "node scripts/deploy/cli.js help",
-    "cli:status": "node scripts/deploy/cli.js status"
+    "status": "node scripts/deploy/cli.js status"
   },
   "dependencies": {
     "express": "^4.18.0",
