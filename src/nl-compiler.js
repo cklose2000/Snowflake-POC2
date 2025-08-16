@@ -1,6 +1,7 @@
 /**
- * Natural Language to Procedure Parameters Compiler
+ * Claude Code Natural Language Compiler
  * Converts user text into stored procedure calls - no ad-hoc SQL
+ * This is Claude Code's brain - understanding intent and creating safe plans
  */
 
 class NLCompiler {
@@ -97,7 +98,11 @@ class NLCompiler {
         'real[-\\s]?time',
         'stream',
         'latest',
-        'recent activity'
+        'recent activity',
+        'recent events',
+        'last \\d+ events',
+        'event stream',
+        'show.*events'
       ]
     };
   }

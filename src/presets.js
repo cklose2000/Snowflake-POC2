@@ -172,6 +172,9 @@ function getPresetById(presetId) {
   return null;
 }
 
+// Alias for backward compatibility
+const getPreset = getPresetById;
+
 /**
  * Convert preset params to SQL-ready values
  * Handles timestamp expressions
@@ -247,6 +250,7 @@ if (typeof module !== 'undefined' && module.exports) {
     PRESETS,
     getAllPresets,
     getPresetById,
+    getPreset,  // Added alias export
     resolvePresetParams,
     generatePresetButtons,
     createCustomPreset,
@@ -254,3 +258,16 @@ if (typeof module !== 'undefined' && module.exports) {
     loadCustomPresets
   };
 }
+
+// ES6 exports for import syntax
+export {
+  PRESETS,
+  getAllPresets,
+  getPresetById,
+  getPreset,
+  resolvePresetParams,
+  generatePresetButtons,
+  createCustomPreset,
+  saveCustomPreset,
+  loadCustomPresets
+};

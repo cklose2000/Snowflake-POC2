@@ -1,0 +1,10 @@
+✓ test_dst_handling
+✓ test_event_attributes
+✓ test_multiple_deliveries
+✓ test_schedule_creation_daily
+✓ test_schedule_creation_weekdays
+✓ test_schedule_execution
+✓ test_snapshot_pointer_only
+✓ test_timezone_validation
+
+Results: 8 passed, 0 failed

@@ -1,0 +1,12 @@
+✓ test_cohort_url_validation
+✓ test_correct_call_pattern
+✓ test_filters_preserved
+✓ test_interval_clamping
+✓ test_iso_timestamps_required
+✓ test_limit_capping
+✓ test_lowercase_json_keys
+✓ test_no_sql_in_params
+✓ test_proc_whitelist_enforced
+✓ test_query_tag_set
+
+Results: 10 passed, 0 failed

@@ -1,0 +1,23 @@
+Dashboard Factory Test Report
+Generated: Sat Aug 16 07:43:09 EDT 2025
+=========================================
+
+=== Python Unit Tests ===
+✓ Mock_Session passed
+✓ Plan_Runner passed
+✗ NL_Compiler failed
+  See reports/NL_Compiler_output.txt for details
+✓ Schedule_Flow passed
+✗ UI_Smoke failed
+  See reports/UI_Smoke_output.txt for details
+
+=== SQL Procedure Tests ===
+✗ SQL_Procedures failed
+  See reports/SQL_Procedures_output.txt for details
+
+=========================================
+Summary
+=========================================
+Total Tests: 6
+Passed: 3
+Failed: 3

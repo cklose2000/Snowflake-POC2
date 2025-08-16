@@ -19,7 +19,7 @@ CREATE OR REPLACE PROCEDURE DASH_GET_SERIES(
   filters VARIANT,
   group_by STRING
 )
-RETURNS VARIANT
+RETURNS STRING
 LANGUAGE SQL
 EXECUTE AS OWNER
 AS $$
@@ -91,7 +91,7 @@ CREATE OR REPLACE PROCEDURE DASH_GET_TOPN(
   filters VARIANT,
   n NUMBER
 )
-RETURNS VARIANT
+RETURNS STRING
 LANGUAGE SQL
 EXECUTE AS OWNER
 AS $$
@@ -142,7 +142,7 @@ CREATE OR REPLACE PROCEDURE DASH_GET_EVENTS(
   cursor_ts TIMESTAMP_TZ,
   limit_rows NUMBER
 )
-RETURNS VARIANT
+RETURNS STRING
 LANGUAGE SQL
 EXECUTE AS OWNER
 AS $$
@@ -197,7 +197,7 @@ CREATE OR REPLACE PROCEDURE DASH_GET_METRICS(
   end_ts TIMESTAMP_TZ,
   filters VARIANT
 )
-RETURNS VARIANT
+RETURNS STRING
 LANGUAGE SQL
 EXECUTE AS OWNER
 AS $$
@@ -244,18 +244,35 @@ END;
 $$;
 
 -- =====================================================
--- Dashboard Persistence Table
+-- Dashboard View (reads from EVENTS table)
+-- NO NEW TABLES! Everything is an event!
 -- =====================================================
 -- @statement
-CREATE TABLE IF NOT EXISTS MCP.DASHBOARDS (
-  dashboard_id STRING PRIMARY KEY,
-  title STRING NOT NULL,
-  spec VARIANT NOT NULL,
-  created_at TIMESTAMP_TZ DEFAULT CURRENT_TIMESTAMP(),
-  created_by STRING DEFAULT CURRENT_USER(),
-  refresh_interval_sec NUMBER DEFAULT 300,
-  is_active BOOLEAN DEFAULT TRUE
-);
+CREATE OR REPLACE VIEW MCP.VW_DASHBOARDS AS
+WITH latest_dashboards AS (
+  SELECT 
+    object_id AS dashboard_id,
+    attributes:title::STRING AS title,
+    attributes:spec AS spec,
+    occurred_at AS created_at,
+    actor_id AS created_by,
+    COALESCE(TRY_CAST(attributes:refresh_interval_sec AS NUMBER), 300) AS refresh_interval_sec,
+    COALESCE(TRY_CAST(attributes:is_active AS BOOLEAN), TRUE) AS is_active,
+    ROW_NUMBER() OVER (PARTITION BY object_id ORDER BY occurred_at DESC) AS rn
+  FROM ACTIVITY.EVENTS
+  WHERE action IN ('dashboard.created', 'dashboard.updated')
+    AND object_type = 'dashboard'
+)
+SELECT 
+  dashboard_id,
+  title,
+  spec,
+  created_at,
+  created_by,
+  refresh_interval_sec,
+  is_active
+FROM latest_dashboards
+WHERE rn = 1 AND is_active = TRUE;
 
 -- =====================================================
 -- Save Dashboard Procedure
@@ -267,7 +284,7 @@ CREATE OR REPLACE PROCEDURE SAVE_DASHBOARD(
   spec VARIANT,
   refresh_interval_sec NUMBER
 )
-RETURNS VARIANT
+RETURNS STRING
 LANGUAGE SQL
 EXECUTE AS OWNER
 AS $$
@@ -276,23 +293,28 @@ BEGIN
   -- Since we're using EXECUTE AS OWNER, we control access at proc level
   -- The proc itself has the needed privileges
   
-  -- Insert or update dashboard
-  MERGE INTO MCP.DASHBOARDS AS target
-  USING (SELECT 
-    :dashboard_id AS dashboard_id,
-    :title AS title,
-    :spec AS spec,
-    :refresh_interval_sec AS refresh_interval_sec
-  ) AS source
-  ON target.dashboard_id = source.dashboard_id
-  WHEN MATCHED THEN
-    UPDATE SET 
-      title = source.title,
-      spec = source.spec,
-      refresh_interval_sec = source.refresh_interval_sec
-  WHEN NOT MATCHED THEN
-    INSERT (dashboard_id, title, spec, refresh_interval_sec)
-    VALUES (source.dashboard_id, source.title, source.spec, source.refresh_interval_sec);
+  -- Save dashboard as an event (no table creation!)
+  INSERT INTO LANDING.RAW_EVENTS (event_payload, source_system, ingested_at)
+  VALUES (
+    OBJECT_CONSTRUCT(
+      'event_id', UUID_STRING(),
+      'action', 'dashboard.created',
+      'actor_id', CURRENT_USER(),
+      'object', OBJECT_CONSTRUCT(
+        'type', 'dashboard',
+        'id', dashboard_id
+      ),
+      'attributes', OBJECT_CONSTRUCT(
+        'title', title,
+        'spec', spec,
+        'refresh_interval_sec', refresh_interval_sec,
+        'is_active', TRUE
+      ),
+      'occurred_at', CURRENT_TIMESTAMP()
+    ),
+    'DASHBOARD_SYSTEM',
+    CURRENT_TIMESTAMP()
+  );
   
   -- Log the event
   CALL LOG_CLAUDE_EVENT(OBJECT_CONSTRUCT(
@@ -322,7 +344,7 @@ $$;
 -- =====================================================
 -- @statement
 CREATE OR REPLACE PROCEDURE GET_DASHBOARD(dashboard_id STRING)
-RETURNS VARIANT
+RETURNS STRING
 LANGUAGE SQL
 EXECUTE AS OWNER
 AS $$
@@ -341,9 +363,8 @@ BEGIN
       'created_at', created_at,
       'created_by', created_by
     )
-    FROM MCP.DASHBOARDS
+    FROM MCP.VW_DASHBOARDS
     WHERE dashboard_id = :dashboard_id
-      AND is_active = TRUE
   );
   
   IF (dashboard IS NULL) THEN

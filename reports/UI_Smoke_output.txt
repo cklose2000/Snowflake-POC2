@@ -1,0 +1,21 @@
+
+TestUISmoke:
+  ✓ test_agent_console_present
+  ✓ test_audit_trail_visibility
+  ✓ test_claude_branding_visible
+  ✓ test_dashboard_selector
+  ✓ test_error_handling_display
+  ✓ test_natural_language_input
+  ✗ test_preset_buttons: 'list' object is not callable
+  ✓ test_status_transitions
+  ✓ test_visualization_rendering
+  ✓ test_zero_click_flow
+
+TestHeadlessValidation:
+  ✗ test_claude_attribution_in_results: 'MockStreamlit' object has no attribute 'caption'
+  ✓ test_no_plotly_imports
+  ✓ test_query_params_handling
+  ✗ test_responsive_layout: 'list' object is not callable
+  ✓ test_session_state_management
+
+Total Results: 12 passed, 3 failed

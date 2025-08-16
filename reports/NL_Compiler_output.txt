@@ -1,0 +1,12 @@
+✗ test_cohort_url_parsing: 
+✓ test_dimension_values
+✓ test_filters_structure
+✓ test_interval_parsing
+✓ test_iso_timestamps_generated
+✓ test_lowercase_keys
+✓ test_no_sql_in_output
+✓ test_proc_selection
+✓ test_top_actions_today
+✓ test_user_filter_extraction
+
+Results: 9 passed, 1 failed

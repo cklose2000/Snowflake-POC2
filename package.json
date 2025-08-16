@@ -6,6 +6,8 @@
   "scripts": {
     "start": "sf log --action npm.start.begin 2>/dev/null; node src/server.js; code=$?; sf log --action npm.start.end --attrs '{\"exit_code\":'$code'}' 2>/dev/null; exit $code",
     "_start": "node src/server.js",
+    "dashboard-server": "sf log --action npm.dashboard.begin 2>/dev/null; node src/dashboard-server.js; code=$?; sf log --action npm.dashboard.end --attrs '{\"exit_code\":'$code'}' 2>/dev/null; exit $code",
+    "_dashboard-server": "node src/dashboard-server.js",
     "setup": "sf log --action npm.setup.begin 2>/dev/null; node scripts/setup.js; code=$?; sf log --action npm.setup.end --attrs '{\"exit_code\":'$code'}' 2>/dev/null; exit $code",
     "_setup": "node scripts/setup.js",
     "validate": "sf log --action npm.validate.begin 2>/dev/null; node scripts/validate.js; code=$?; sf log --action npm.validate.end --attrs '{\"exit_code\":'$code'}' 2>/dev/null; exit $code",
@@ -20,7 +22,9 @@
     "express": "^4.18.0",
     "ws": "^8.13.0",
     "snowflake-sdk": "^1.9.0",
-    "dotenv": "^16.0.0"
+    "dotenv": "^16.0.0",
+    "uuid": "^9.0.0",
+    "body-parser": "^1.20.0"
   },
   "engines": {
     "node": ">=18.0.0"

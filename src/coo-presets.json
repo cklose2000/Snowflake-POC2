@@ -1,0 +1,251 @@
+{
+  "presets": {
+    "activity_by_user_7d": {
+      "title": "Activity by User",
+      "subtitle": "Last 7 days",
+      "icon": "👥",
+      "slug": "activity-by-user",
+      "plan_version": "1.0",
+      "proc": "DASH_GET_TOPN",
+      "params": {
+        "dimension": "actor",
+        "n": 25,
+        "limit": 1000,
+        "filters": {}
+      },
+      "panels": [
+        {
+          "type": "bar",
+          "title": "Activity by User - Last 7 Days",
+          "x": "actor",
+          "y": "count"
+        }
+      ]
+    },
+    "top_actions_today": {
+      "title": "Top Actions",
+      "subtitle": "Today",
+      "icon": "🎯",
+      "slug": "top-actions",
+      "plan_version": "1.0",
+      "proc": "DASH_GET_TOPN",
+      "params": {
+        "dimension": "action",
+        "n": 10,
+        "limit": 1000,
+        "filters": {}
+      },
+      "panels": [
+        {
+          "type": "bar",
+          "title": "Top Actions Today",
+          "x": "action",
+          "y": "count"
+        }
+      ]
+    },
+    "unique_actors_30d": {
+      "title": "Unique Actors",
+      "subtitle": "Last 30 days",
+      "icon": "🌟",
+      "slug": "unique-actors",
+      "plan_version": "1.0",
+      "proc": "DASH_GET_METRICS",
+      "params": {
+        "filters": {}
+      },
+      "panels": [
+        {
+          "type": "metric",
+          "title": "30-Day Overview"
+        }
+      ]
+    },
+    "events_by_source_24h": {
+      "title": "Events by Source",
+      "subtitle": "Last 24 hours",
+      "icon": "📊",
+      "slug": "events-by-source",
+      "plan_version": "1.0",
+      "proc": "DASH_GET_TOPN",
+      "params": {
+        "dimension": "source",
+        "n": 10,
+        "limit": 1000,
+        "filters": {}
+      },
+      "panels": [
+        {
+          "type": "bar",
+          "title": "Event Sources - Last 24h",
+          "x": "source",
+          "y": "count"
+        }
+      ]
+    },
+    "hourly_activity": {
+      "title": "Activity Timeline",
+      "subtitle": "Last 24 hours",
+      "icon": "📈",
+      "slug": "activity-timeline",
+      "plan_version": "1.0",
+      "proc": "DASH_GET_SERIES",
+      "params": {
+        "interval": "hour",
+        "group_by": null,
+        "filters": {}
+      },
+      "panels": [
+        {
+          "type": "line",
+          "title": "Hourly Activity Trend",
+          "x": "time",
+          "y": "count"
+        }
+      ]
+    },
+    "live_stream": {
+      "title": "Live Activity",
+      "subtitle": "Real-time stream",
+      "icon": "🔴",
+      "slug": "live-stream",
+      "plan_version": "1.0",
+      "proc": "DASH_GET_EVENTS",
+      "params": {
+        "limit": 50
+      },
+      "panels": [
+        {
+          "type": "table",
+          "title": "Recent Events"
+        }
+      ]
+    }
+  },
+  "time_ranges": {
+    "6h": {
+      "label": "Last 6 hours",
+      "start_ts": "DATEADD('hour', -6, CURRENT_TIMESTAMP())",
+      "end_ts": "CURRENT_TIMESTAMP()"
+    },
+    "24h": {
+      "label": "Last 24 hours",
+      "start_ts": "DATEADD('hour', -24, CURRENT_TIMESTAMP())",
+      "end_ts": "CURRENT_TIMESTAMP()"
+    },
+    "7d": {
+      "label": "Last 7 days",
+      "start_ts": "DATEADD('day', -7, CURRENT_TIMESTAMP())",
+      "end_ts": "CURRENT_TIMESTAMP()"
+    },
+    "30d": {
+      "label": "Last 30 days",
+      "start_ts": "DATEADD('day', -30, CURRENT_TIMESTAMP())",
+      "end_ts": "CURRENT_TIMESTAMP()"
+    },
+    "today": {
+      "label": "Today",
+      "start_ts": "DATE_TRUNC('day', CURRENT_TIMESTAMP())",
+      "end_ts": "CURRENT_TIMESTAMP()"
+    },
+    "yesterday": {
+      "label": "Yesterday",
+      "start_ts": "DATEADD('day', -1, DATE_TRUNC('day', CURRENT_TIMESTAMP()))",
+      "end_ts": "DATE_TRUNC('day', CURRENT_TIMESTAMP())"
+    },
+    "this_week": {
+      "label": "This week",
+      "start_ts": "DATE_TRUNC('week', CURRENT_DATE())",
+      "end_ts": "CURRENT_TIMESTAMP()"
+    },
+    "this_month": {
+      "label": "This month",
+      "start_ts": "DATE_TRUNC('month', CURRENT_DATE())",
+      "end_ts": "CURRENT_TIMESTAMP()"
+    }
+  },
+  "intervals": {
+    "minute": "Every minute",
+    "5 minute": "5 minutes",
+    "15 minute": "15 minutes",
+    "hour": "Hourly",
+    "day": "Daily"
+  },
+  "dimensions": {
+    "action": "Action performed",
+    "actor": "User/Actor",
+    "source": "Event source"
+  },
+  "plan_schema": {
+    "version": "1.0",
+    "description": "Dashboard Plan Schema",
+    "properties": {
+      "plan_version": {
+        "type": "string",
+        "enum": ["1.0"]
+      },
+      "proc": {
+        "type": "string",
+        "enum": ["DASH_GET_SERIES", "DASH_GET_TOPN", "DASH_GET_EVENTS", "DASH_GET_METRICS"]
+      },
+      "params": {
+        "type": "object",
+        "properties": {
+          "start_ts": {"type": "string"},
+          "end_ts": {"type": "string"},
+          "interval": {
+            "type": "string",
+            "enum": ["minute", "5 minute", "15 minute", "hour", "day"]
+          },
+          "dimension": {
+            "type": "string",
+            "enum": ["action", "actor", "source"]
+          },
+          "group_by": {
+            "type": ["string", "null"],
+            "enum": ["action", "actor", null]
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 1000
+          },
+          "cursor_ts": {"type": "string"},
+          "filters": {
+            "type": "object",
+            "properties": {
+              "action": {"type": "string"},
+              "actor": {"type": "string"},
+              "cohort_url": {
+                "type": "string",
+                "pattern": "^s3://.+"
+              }
+            }
+          }
+        }
+      },
+      "panels": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["bar", "line", "metric", "table"]
+            },
+            "title": {"type": "string"},
+            "x": {"type": "string"},
+            "y": {"type": "string"}
+          }
+        }
+      }
+    }
+  }
+}

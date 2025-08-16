@@ -101,11 +101,21 @@
             Analyze
           </button>
           <button 
-            onclick="saveAsDashboard()"
-            class="py-3 px-4 bg-[var(--surface)] hover:bg-opacity-80 rounded-lg font-medium transition touch-target"
-            title="Save as dashboard">
-            💾
+            onclick="generateDashboard()"
+            class="py-3 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition touch-target"
+            title="Generate Streamlit Dashboard">
+            🚀 Generate
           </button>
+        </div>
+        
+        <!-- Dashboard Title Input (hidden by default) -->
+        <div id="dashboard-config" class="mt-3 hidden">
+          <input 
+            type="text" 
+            id="dashboard-title" 
+            placeholder="Dashboard Title" 
+            class="w-full p-2 bg-[var(--bg)] rounded-lg border border-[var(--border)]"
+            value="Executive Dashboard">
         </div>
       </div>
     </section>

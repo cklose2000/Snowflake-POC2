@@ -1,0 +1,184 @@
+{
+  "valid_presets": [
+    {
+      "name": "Last 24 Hours",
+      "query": "activity for last 24 hours by hour",
+      "expected_proc": "DASH_GET_SERIES",
+      "expected_interval": "hour",
+      "expected_timerange_hours": 24
+    },
+    {
+      "name": "Top Users Today",
+      "query": "top users today",
+      "expected_proc": "DASH_GET_TOPN",
+      "expected_dimension": "actor",
+      "expected_n": 10
+    },
+    {
+      "name": "This Week's Activity",
+      "query": "activity for last 7 days by day",
+      "expected_proc": "DASH_GET_SERIES",
+      "expected_interval": "day",
+      "expected_timerange_days": 7
+    },
+    {
+      "name": "Top Actions",
+      "query": "top 10 actions",
+      "expected_proc": "DASH_GET_TOPN",
+      "expected_dimension": "action",
+      "expected_n": 10
+    },
+    {
+      "name": "Summary Metrics",
+      "query": "summary metrics for last month",
+      "expected_proc": "DASH_GET_METRICS",
+      "expected_timerange_days": 30
+    }
+  ],
+  "valid_intervals": [
+    "minute",
+    "5 minute",
+    "15 minute",
+    "hour",
+    "day"
+  ],
+  "valid_dimensions": [
+    "actor",
+    "action",
+    "source",
+    "object_type"
+  ],
+  "test_actors": [
+    "admin@company.com",
+    "user1@example.com",
+    "user2@example.com",
+    "test@test.com",
+    "coo@enterprise.com"
+  ],
+  "test_actions": [
+    "user.signup",
+    "user.login",
+    "user.logout",
+    "order.placed",
+    "order.cancelled",
+    "dashboard.created",
+    "dashboard.viewed",
+    "dashboard.scheduled",
+    "mcp.query.executed",
+    "system.permission.granted"
+  ],
+  "test_sources": [
+    "WEB",
+    "API",
+    "MOBILE",
+    "SYSTEM",
+    "CLAUDE",
+    "MCP"
+  ],
+  "invalid_sql_patterns": [
+    "DATEADD",
+    "CURRENT_TIMESTAMP",
+    "DATE_TRUNC",
+    "SELECT",
+    "FROM",
+    "WHERE",
+    "DROP",
+    "CREATE",
+    "INSERT",
+    "UPDATE",
+    "DELETE"
+  ],
+  "claude_attribution_tags": [
+    "agent:claude",
+    "via Claude Code",
+    "Claude Code",
+    "🤖 Claude"
+  ],
+  "test_timezones": [
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles",
+    "UTC",
+    "Europe/London",
+    "Asia/Tokyo",
+    "Australia/Sydney"
+  ],
+  "schedule_frequencies": [
+    "DAILY",
+    "WEEKDAYS",
+    "WEEKLY",
+    "MONTHLY"
+  ],
+  "delivery_channels": [
+    "email",
+    "slack",
+    "webhook",
+    "teams"
+  ],
+  "test_dashboards": [
+    {
+      "id": "dash_test_001",
+      "name": "Executive Overview",
+      "created_by": "admin@company.com",
+      "created_at": "2025-01-15T10:00:00Z"
+    },
+    {
+      "id": "dash_test_002",
+      "name": "User Activity Monitor",
+      "created_by": "coo@enterprise.com",
+      "created_at": "2025-01-14T15:30:00Z"
+    },
+    {
+      "id": "dash_test_003",
+      "name": "Sales Performance",
+      "created_by": "sales@company.com",
+      "created_at": "2025-01-13T09:00:00Z"
+    }
+  ],
+  "sample_events": [
+    {
+      "event_id": "evt_001",
+      "action": "user.signup",
+      "actor_id": "user1@example.com",
+      "object": {
+        "type": "user",
+        "id": "usr_123"
+      },
+      "attributes": {
+        "source": "WEB",
+        "referrer": "google.com"
+      },
+      "occurred_at": "2025-01-16T10:30:00Z"
+    },
+    {
+      "event_id": "evt_002",
+      "action": "order.placed",
+      "actor_id": "user2@example.com",
+      "object": {
+        "type": "order",
+        "id": "ord_456"
+      },
+      "attributes": {
+        "amount": 299.99,
+        "currency": "USD",
+        "items": 3
+      },
+      "occurred_at": "2025-01-16T11:00:00Z"
+    },
+    {
+      "event_id": "evt_003",
+      "action": "dashboard.created",
+      "actor_id": "coo@enterprise.com",
+      "object": {
+        "type": "dashboard",
+        "id": "dash_789"
+      },
+      "attributes": {
+        "name": "Q1 Performance",
+        "via": "Claude Code"
+      },
+      "occurred_at": "2025-01-16T12:00:00Z"
+    }
+  ]
+}

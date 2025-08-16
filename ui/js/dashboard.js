@@ -10,6 +10,9 @@ let updateTimer = null;
 let activityFeed = [];
 let currentPanel = 'query'; // For mobile navigation
 
+// Dashboard server configuration
+const DASHBOARD_SERVER = 'http://localhost:3001';
+
 // Initialize dashboard on load
 document.addEventListener('DOMContentLoaded', init);
 
@@ -76,27 +79,35 @@ async function executeSuggestion(panel) {
       validatePanel(panel);
     }
     
-    // Send to server
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'execute_panel',
-        panel: panel
-      }));
-      
-      showToast('Executing query...', 'info');
+    // Call dashboard server API
+    const response = await fetch(`${DASHBOARD_SERVER}/api/execute-proc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        proc: panel.proc || 'DASH_GET_SERIES',
+        params: panel.params || {}
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.ok && result.data) {
+      // Display the results
+      displayPanelResults(panel, result.data);
+      showToast('Query executed successfully', 'success');
     } else {
-      showToast('Not connected to server', 'error');
+      showToast(result.error || 'Query failed', 'error');
     }
     
   } catch (error) {
-    showToast(`Schema error: ${error.message}`, 'error');
+    showToast(`Error: ${error.message}`, 'error');
   }
 }
 
 /**
- * Execute custom query
+ * Execute custom query using NL endpoint
  */
-function executeCustomQuery() {
+async function executeCustomQuery() {
   const textarea = document.getElementById('custom-query');
   const query = textarea.value.trim();
   
@@ -105,20 +116,46 @@ function executeCustomQuery() {
     return;
   }
   
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
-      type: 'chat',
-      message: query
-    }));
-    
+  try {
     showToast('Processing: ' + query.substring(0, 50) + '...', 'info');
-    // Don't clear immediately - let user see what was sent
-    // Clear after a delay or on successful response
-    setTimeout(() => {
+    
+    // Call the NL query endpoint
+    const response = await fetch(`${DASHBOARD_SERVER}/api/nl-query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        prompt: query,
+        context: {
+          // Add any context about current dashboard state
+          currentTime: new Date().toISOString()
+        }
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.ok && result.data) {
+      // Display the results based on the procedure type
+      const plan = result.data.plan;
+      displayPanelResults(
+        { type: plan.proc, params: plan.params }, 
+        result.data.result
+      );
+      
+      // Show success message
+      if (result.data.usedFallback) {
+        showToast('Query executed (using pattern matching)', 'success');
+      } else {
+        showToast('Query executed successfully', 'success');
+      }
+      
+      // Clear the input
       textarea.value = '';
-    }, 2000);
-  } else {
-    showToast('Not connected to server', 'error');
+    } else {
+      showToast(result.error || 'Query failed', 'error');
+    }
+  } catch (error) {
+    showToast(`Error: ${error.message}`, 'error');
   }
 }
 
@@ -278,6 +315,159 @@ function handleDashboardComplete(result) {
   if (window.innerWidth < 768) {
     showMobilePanel('viz');
   }
+}
+
+/**
+ * Execute a preset configuration
+ */
+async function executePreset(presetId) {
+  try {
+    const response = await fetch(`${DASHBOARD_SERVER}/api/execute-preset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ presetId })
+    });
+    
+    const result = await response.json();
+    
+    if (result.ok && result.data) {
+      displayPanelResults({ type: presetId }, result.data);
+      showToast('Preset executed successfully', 'success');
+    } else {
+      showToast(result.error || 'Preset execution failed', 'error');
+    }
+  } catch (error) {
+    showToast(`Error: ${error.message}`, 'error');
+  }
+}
+
+/**
+ * Generate a Streamlit dashboard
+ */
+async function generateDashboard() {
+  try {
+    // Gather current dashboard configuration
+    const panels = getCurrentPanels();
+    
+    const dashboardSpec = {
+      title: document.getElementById('dashboard-title')?.value || 'Executive Dashboard',
+      spec: {
+        panels: panels
+      }
+    };
+    
+    const response = await fetch(`${DASHBOARD_SERVER}/api/create-streamlit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dashboardSpec)
+    });
+    
+    const result = await response.json();
+    
+    if (result.ok && result.data) {
+      if (result.data.url) {
+        // Open dashboard in new tab
+        window.open(result.data.url, '_blank');
+        showToast(`Dashboard created! Opening ${result.data.dashboardId}`, 'success');
+      } else if (result.data.instructions) {
+        // Show setup instructions
+        showInstructions(result.data.instructions);
+      }
+    } else {
+      showToast(result.error || 'Dashboard generation failed', 'error');
+    }
+  } catch (error) {
+    showToast(`Error: ${error.message}`, 'error');
+  }
+}
+
+/**
+ * Display panel results in appropriate chart/table
+ */
+function displayPanelResults(panel, data) {
+  if (!data) return;
+  
+  // Determine panel type and update appropriate visualization
+  const panelType = panel.type || panel.proc?.toLowerCase() || 'unknown';
+  
+  if (panelType.includes('series') || panelType.includes('time')) {
+    // Time series chart
+    const labels = data.map(r => formatTime(r.TIME_BUCKET || r.time_bucket));
+    const values = data.map(r => r.EVENT_COUNT || r.event_count || r.CNT || 0);
+    updateChart('trend', { labels, values });
+  } else if (panelType.includes('topn') || panelType.includes('rank')) {
+    // Ranking chart
+    const labels = data.map(r => r.DIMENSION || r.dimension || r.action || 'Unknown');
+    const values = data.map(r => r.CNT || r.count || r.EVENT_COUNT || 0);
+    updateChart('ranking', { labels, values });
+  } else if (panelType.includes('metric')) {
+    // Metrics display
+    updateMetrics(data[0] || data);
+  } else if (panelType.includes('event') || panelType.includes('stream')) {
+    // Events table/feed
+    data.forEach(row => addToActivityFeed(row));
+  }
+}
+
+/**
+ * Get current panel configuration for dashboard generation
+ */
+function getCurrentPanels() {
+  // Collect current visualization state
+  const panels = [];
+  
+  // Add time series panel if data exists
+  if (window.trendChart && window.trendChart.data.labels.length > 0) {
+    panels.push({
+      type: 'series',
+      title: 'Activity Trend',
+      params: {
+        interval_str: 'hour'
+      }
+    });
+  }
+  
+  // Add ranking panel if data exists
+  if (window.rankingChart && window.rankingChart.data.labels.length > 0) {
+    panels.push({
+      type: 'topn',
+      title: 'Top Activities',
+      params: {
+        dimension: 'action',
+        n: 10
+      }
+    });
+  }
+  
+  // Add metrics panel
+  panels.push({
+    type: 'metrics',
+    title: 'Key Metrics',
+    params: {}
+  });
+  
+  return panels;
+}
+
+/**
+ * Show setup instructions modal
+ */
+function showInstructions(instructions) {
+  const modal = document.createElement('div');
+  modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-lg max-h-[80vh] overflow-auto">
+      <h3 class="text-lg font-bold mb-4">Dashboard Setup Instructions</h3>
+      <ol class="list-decimal list-inside space-y-2">
+        ${instructions.map(i => `<li class="text-sm">${i}</li>`).join('')}
+      </ol>
+      <button onclick="this.closest('.fixed').remove()" 
+              class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+        Close
+      </button>
+    </div>
+  `;
+  document.body.appendChild(modal);
 }
 
 /**

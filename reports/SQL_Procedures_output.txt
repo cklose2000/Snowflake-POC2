@@ -1,0 +1,29 @@
+📄 Executing 3 statements from /Users/chandler/claude7/GrowthZone/SnowflakePOC2/scripts/test-comprehensive-procs.sql
+
+🔐 Using key-pair authentication for CLAUDE_CODE_AI_AGENT
+{"level":"INFO","message":"[7:54:02.813 AM]: Creating new connection object"}
+{"level":"INFO","message":"[7:54:02.924 AM]: Creating Connection[id: c640f8b1-e5dd-4d8e-9ee1-b414fd93c70d] with host: uec18397.us-east-1.snowflakecomputing.com, account: uec18397, accessUrl: https://uec18397.us-east-1.snowflakecomputing.com, user: CLAUDE_CODE_AI_AGENT, password is not provided, role: undefined, database: CLAUDE_BI, schema: MCP, warehouse: CLAUDE_AGENT_WH, region: us-east-1, authenticator: SNOWFLAKE_JWT, ocsp mode: FAIL_OPEN, os: darwin, os version: 22.6.0"}
+{"level":"INFO","message":"[7:54:02.925 AM]: Connection[id: c640f8b1-e5dd-4d8e-9ee1-b414fd93c70d] additional details: passcode in password is provided, passcode is not provided, private key is provided, application: undefined, client name: snowflake-sdk, client version: 1.15.0, retry timeout: 300, private key path: undefined, private key pass is not provided, client store temporary credential: false, browser response timeout: 120000"}
+{"level":"INFO","message":"[7:54:02.925 AM]: Connection[id: c640f8b1-e5dd-4d8e-9ee1-b414fd93c70d] - connection object created successfully."}
+{"level":"INFO","message":"[7:54:02.926 AM]: Connection[id: c640f8b1-e5dd-4d8e-9ee1-b414fd93c70d] - connecting. Associated Snowflake domain: GLOBAL"}
+{"level":"INFO","message":"[7:54:02.935 AM]: Connection[id: c640f8b1-e5dd-4d8e-9ee1-b414fd93c70d] - authentication successful using: SNOWFLAKE_JWT"}
+{"level":"INFO","message":"[7:54:02.936 AM]: Trying to initialize Easy Logging"}
+{"level":"INFO","message":"[7:54:02.941 AM]: No client config detected."}
+{"level":"INFO","message":"[7:54:02.942 AM]: No config file path found. Client config will not be used."}
+{"level":"INFO","message":"[7:54:02.942 AM]: Easy Logging is disabled as no config has been found"}
+{"level":"INFO","message":"[7:54:02.946 AM]: Connection[id: c640f8b1-e5dd-4d8e-9ee1-b414fd93c70d] - connected successfully after 19.823239999999714 milliseconds"}
+✅ Connected to Snowflake as CLAUDE_CODE_AI_AGENT
+📊 Session ID: cc-1755345242806-dbht2iw82
+▶️  Statement 1/3...
+   USE DATABASE CLAUDE_BI;
+   ✅ Success
+   📊 Rows affected: 1
+▶️  Statement 2/3...
+   USE SCHEMA MCP;
+   ✅ Success
+   📊 Rows affected: 1
+▶️  Statement 3/3...
+   CALL MCP.DASH_GET_SERIES(PARSE_JSON('{     "start_ts": "2025-01-16T00:00:00Z",  ...
+   ❌ Failed: Uncaught exception of type 'EXPRESSION_ERROR' on line 3 at position 9 : SQL compilation error: error line 22 at position 17
+invalid identifier 'PARAMS'
+🔌 Disconnected from Snowflake
