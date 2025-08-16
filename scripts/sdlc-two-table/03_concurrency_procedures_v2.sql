@@ -155,19 +155,15 @@ try {
   // Generate internal work ID (ULID-style for sorting)
   const workId = 'WORK_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9).toUpperCase();
   
-  // Generate human-readable display ID
-  // Count existing work items to determine sequence number
-  const countSQL = `
-    SELECT COUNT(DISTINCT attributes:work_id::string) + 1 as next_num
-    FROM CLAUDE_BI.ACTIVITY.EVENTS
-    WHERE action = 'sdlc.work.create'
-  `;
+  // Generate human-readable display ID using SEQUENCE
+  // This guarantees unique, sequential numbering even with concurrent requests
+  const seqSQL = `SELECT CLAUDE_BI.MCP.SDLC_TICKET_SEQ.NEXTVAL as ticket_num`;
   
-  const countStmt = SF.createStatement({ sqlText: countSQL });
-  const countRS = countStmt.execute();
-  countRS.next();
+  const seqStmt = SF.createStatement({ sqlText: seqSQL });
+  const seqRS = seqStmt.execute();
+  seqRS.next();
   
-  const displayId = 'WORK-' + String(countRS.getColumnValue('NEXT_NUM')).padStart(5, '0');
+  const displayId = 'WORK-' + String(seqRS.getColumnValue('TICKET_NUM')).padStart(5, '0');
   
   // Create the work item event
   const createPayload = {
