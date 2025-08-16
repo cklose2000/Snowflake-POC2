@@ -88,6 +88,49 @@ CALL SDLC_CLAIM_NEXT('agent-claude', 'ai_developer', ARRAY['javascript']);
 SELECT * FROM VW_SDLC_EXECUTIVE_DASHBOARD;
 ```
 
+## 🔄 DDL Versioning System (NEW!)
+
+### Complete Version Control for Database Objects
+Revolutionary DDL versioning that treats all schema changes as events - no version tables needed:
+
+- **Automatic Version Tracking**: Every CREATE/ALTER/DROP becomes a versioned event
+- **One-Click Rollback**: Instantly revert to any previous version
+- **Drift Detection**: Automated comparison of deployed vs actual DDL
+- **Test Framework**: Add tests to procedures and views, run them automatically
+- **Complete History**: Full audit trail of who changed what, when, and why
+
+### Key Capabilities
+- **Version-Aware Deployments**: Automatic version incrementing with hash-based change detection
+- **Production Sync**: Capture current state of all procedures and views
+- **Health Monitoring**: Automated health checks for drift, test coverage, and unused objects
+- **Cleanup Automation**: Identify and prune old versions or unused objects
+
+### Quick Start
+```sql
+-- Capture current production state
+CALL DDL_CAPTURE_CURRENT();
+
+-- Deploy a new version with tracking
+CALL DDL_DEPLOY('PROCEDURE', 'MY_PROC', '<ddl_text>', 'developer', 'Added new feature');
+
+-- Rollback to previous version
+CALL DDL_ROLLBACK('MY_PROC');
+
+-- Add and run tests
+CALL DDL_ADD_TEST('MY_PROC', 'test_basic', 'SELECT MY_PROC(1)', 'expected_result');
+CALL DDL_RUN_TESTS('MY_PROC');
+
+-- Check system health
+CALL DDL_HEALTH_CHECK();
+```
+
+### Management Views
+- **VW_DDL_CATALOG**: Current version of all objects
+- **VW_DDL_HISTORY**: Complete change history
+- **VW_DDL_DRIFT**: Objects that differ from stored versions
+- **VW_DDL_TEST_COVERAGE**: Which objects have tests
+- **VW_DDL_ROLLBACK_CANDIDATES**: Available versions for rollback
+
 ## 🏛️ The Two-Table Architecture
 
 This system is built on the **Two-Table Law** - a revolutionary approach that stores everything as events:
@@ -110,6 +153,7 @@ This system is built on the **Two-Table Law** - a revolutionary approach that st
 - **Single Access Path**: All Claude Code operations logged and controlled
 - **Complete Audit Trail**: Every query, edit, and deployment tracked
 - **Repository Guards**: Automated compliance checking and enforcement
+- **DDL Version Control**: All schema changes tracked as versioned events
 
 ### Access Control
 - **Role-Based Permissions**: EXECUTE AS OWNER procedures with controlled access
@@ -126,15 +170,24 @@ Enterprise Dashboard System/
 ├── 📱 Web Interface           # Executive dashboards
 ├── 🤖 Claude Code Gateway     # Controlled AI access
 ├── 📋 Compliance Engine       # Two-Table Law enforcement
-└── 🎫 SDLC/Ticketing System  # Event-driven work management
-    ├── Event Taxonomy         # 15+ SDLC event types
-    ├── Core Views            # Work items, priority queue, history
-    ├── Procedures            # Concurrency-safe operations
-    ├── Agent Integration     # Smart work assignment
-    ├── Reporting Views       # Executive analytics
-    ├── Automation Tasks      # SLA monitoring, snapshots
-    ├── Performance Tuning    # Search optimization
-    └── Test Scenarios        # Comprehensive test suite
+├── 🎫 SDLC/Ticketing System  # Event-driven work management
+│   ├── Event Taxonomy         # 15+ SDLC event types
+│   ├── Core Views            # Work items, priority queue, history
+│   ├── Procedures            # Concurrency-safe operations
+│   ├── Agent Integration     # Smart work assignment
+│   ├── Reporting Views       # Executive analytics
+│   ├── Automation Tasks      # SLA monitoring, snapshots
+│   ├── Performance Tuning    # Search optimization
+│   └── Test Scenarios        # Comprehensive test suite
+└── 🔄 DDL Versioning System  # Version control for database objects
+    ├── Version Tracking      # Hash-based change detection
+    ├── Deployment Engine     # Automated version incrementing
+    ├── Rollback Capability   # Instant revert to any version
+    ├── Drift Detection       # Compare deployed vs actual
+    ├── Test Framework        # DDL testing capabilities
+    ├── Health Monitoring     # Automated health checks
+    ├── Management Views      # Catalog, history, coverage
+    └── Automation Tasks      # Cleanup, pruning, sync
 ```
 
 ## 🎯 Performance Metrics
