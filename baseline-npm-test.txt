@@ -1,0 +1,176 @@
+
+> snowflake-poc2-core@2.0.0 test
+> sf log --action npm.test.begin 2>/dev/null; node tests/integration/test-dashboard.js; code=$?; sf log --action npm.test.end --attrs '{"exit_code":'$code'}' 2>/dev/null; exit $code
+
+🔐 Using key-pair authentication for CLAUDE_CODE_AI_AGENT
+{"level":"INFO","message":"[11:58:30.405 AM]: Creating new connection object"}
+{"level":"INFO","message":"[11:58:30.527 AM]: Creating Connection[id: 257c2fa5-ac4d-49a3-b0f2-803004ff0886] with host: uec18397.us-east-1.snowflakecomputing.com, account: uec18397, accessUrl: https://uec18397.us-east-1.snowflakecomputing.com, user: CLAUDE_CODE_AI_AGENT, password is not provided, role: undefined, database: CLAUDE_BI, schema: MCP, warehouse: CLAUDE_AGENT_WH, region: us-east-1, authenticator: SNOWFLAKE_JWT, ocsp mode: FAIL_OPEN, os: darwin, os version: 22.6.0"}
+{"level":"INFO","message":"[11:58:30.529 AM]: Connection[id: 257c2fa5-ac4d-49a3-b0f2-803004ff0886] additional details: passcode in password is provided, passcode is not provided, private key is provided, application: undefined, client name: snowflake-sdk, client version: 1.15.0, retry timeout: 300, private key path: undefined, private key pass is not provided, client store temporary credential: false, browser response timeout: 120000"}
+{"level":"INFO","message":"[11:58:30.530 AM]: Connection[id: 257c2fa5-ac4d-49a3-b0f2-803004ff0886] - connection object created successfully."}
+{"level":"INFO","message":"[11:58:30.531 AM]: Connection[id: 257c2fa5-ac4d-49a3-b0f2-803004ff0886] - connecting. Associated Snowflake domain: GLOBAL"}
+{"level":"INFO","message":"[11:58:30.540 AM]: Connection[id: 257c2fa5-ac4d-49a3-b0f2-803004ff0886] - authentication successful using: SNOWFLAKE_JWT"}
+{"level":"INFO","message":"[11:58:30.541 AM]: Trying to initialize Easy Logging"}
+{"level":"INFO","message":"[11:58:30.545 AM]: No client config detected."}
+{"level":"INFO","message":"[11:58:30.545 AM]: No config file path found. Client config will not be used."}
+{"level":"INFO","message":"[11:58:30.546 AM]: Easy Logging is disabled as no config has been found"}
+{"level":"INFO","message":"[11:58:30.550 AM]: Connection[id: 257c2fa5-ac4d-49a3-b0f2-803004ff0886] - connected successfully after 18.98082400000021 milliseconds"}
+✅ Connected to Snowflake as CLAUDE_CODE_AI_AGENT
+📊 Session ID: cc-1755359910402-i8joxpqe7
+✅ Logged: npm.test.begin
+🔌 Disconnected from Snowflake
+🧪 Testing Dashboard Creation
+
+Connecting to Snowflake...
+{"level":"INFO","message":"[11:58:33.125 AM]: Creating new connection object"}
+{"level":"INFO","message":"[11:58:33.144 AM]: Creating Connection[id: c7329b6b-3917-496f-ac7c-cc00e7fef113] with host: uec18397.us-east-1.snowflakecomputing.com, account: uec18397, accessUrl: https://uec18397.us-east-1.snowflakecomputing.com, user: claude_bi_user, password is provided, role: CLAUDE_BI_ROLE, database: CLAUDE_BI, schema: ANALYTICS, warehouse: CLAUDE_WAREHOUSE, region: us-east-1, authenticator: SNOWFLAKE, ocsp mode: FAIL_OPEN, os: darwin, os version: 22.6.0"}
+{"level":"INFO","message":"[11:58:33.145 AM]: Connection[id: c7329b6b-3917-496f-ac7c-cc00e7fef113] additional details: passcode in password is provided, passcode is not provided, private key is not provided, application: undefined, client name: snowflake-sdk, client version: 1.15.0, retry timeout: 300, private key path: undefined, private key pass is not provided, client store temporary credential: false, browser response timeout: 120000"}
+{"level":"INFO","message":"[11:58:33.146 AM]: Connection[id: c7329b6b-3917-496f-ac7c-cc00e7fef113] - connection object created successfully."}
+{"level":"INFO","message":"[11:58:33.147 AM]: Connection[id: c7329b6b-3917-496f-ac7c-cc00e7fef113] - connecting. Associated Snowflake domain: GLOBAL"}
+{"level":"INFO","message":"[11:58:33.148 AM]: Connection[id: c7329b6b-3917-496f-ac7c-cc00e7fef113] - authentication successful using: SNOWFLAKE"}
+{"level":"INFO","message":"[11:58:33.149 AM]: Trying to initialize Easy Logging"}
+{"level":"INFO","message":"[11:58:33.153 AM]: No client config detected."}
+{"level":"INFO","message":"[11:58:33.153 AM]: No config file path found. Client config will not be used."}
+{"level":"INFO","message":"[11:58:33.154 AM]: Easy Logging is disabled as no config has been found"}
+{"level":"INFO","message":"[11:58:33.157 AM]: Connection[id: c7329b6b-3917-496f-ac7c-cc00e7fef113] - connected successfully after 10.69407000000001 milliseconds"}
+✅ Connected
+
+Test 1: Generate spec from conversation
+Activity logging failed: Error [OperationFailedError]: SQL Compilation error: Invalid Operation INSERT on Dynamic Table
+    at createError (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/errors.js:539:17)
+    at exports.createOperationFailedError (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/errors.js:342:10)
+    at Object.callback (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/services/sf.js:663:28)
+    at /Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/http/base.js:38:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: '002706',
+  sqlState: '23001',
+  data: {
+    internalError: false,
+    unredactedFromSecureObject: false,
+    errorCode: '002706',
+    age: 0,
+    sqlState: '23001',
+    queryId: null,
+    line: -1,
+    pos: -1,
+    type: 'COMPILATION'
+  }
+}
+✅ Spec generated
+   Name: activity_dashboard
+   Panels: 3
+   Hash: 2f9c7904
+
+Test 2: Create dashboard from spec
+Activity logging failed: Error [OperationFailedError]: SQL Compilation error: Invalid Operation INSERT on Dynamic Table
+    at createError (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/errors.js:539:17)
+    at exports.createOperationFailedError (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/errors.js:342:10)
+    at Object.callback (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/services/sf.js:663:28)
+    at /Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/http/base.js:38:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: '002706',
+  sqlState: '23001',
+  data: {
+    internalError: false,
+    unredactedFromSecureObject: false,
+    errorCode: '002706',
+    age: 0,
+    sqlState: '23001',
+    queryId: null,
+    line: -1,
+    pos: -1,
+    type: 'COMPILATION'
+  }
+}
+Activity logging failed: Error [OperationFailedError]: SQL Compilation error: Invalid Operation INSERT on Dynamic Table
+    at createError (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/errors.js:539:17)
+    at exports.createOperationFailedError (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/errors.js:342:10)
+    at Object.callback (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/services/sf.js:663:28)
+    at /Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/http/base.js:38:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: '002706',
+  sqlState: '23001',
+  data: {
+    internalError: false,
+    unredactedFromSecureObject: false,
+    errorCode: '002706',
+    age: 0,
+    sqlState: '23001',
+    queryId: null,
+    line: -1,
+    pos: -1,
+    type: 'COMPILATION'
+  }
+}
+✅ Dashboard created
+   Dashboard ID: dashboard_2f9c7904
+   Objects created: 0
+   Views: 
+   Streamlit file: generated_2f9c7904.py
+
+Test 3: Verify views exist
+
+Test 4: Query activity metrics
+Metrics query failed: Error [OperationFailedError]: SQL compilation error:
+syntax error line 1 at position 0 unexpected '?'.
+    at createError (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/errors.js:539:17)
+    at exports.createOperationFailedError (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/errors.js:342:10)
+    at Object.callback (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/services/sf.js:663:28)
+    at /Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/http/base.js:38:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: '001003',
+  sqlState: '42000',
+  data: {
+    internalError: false,
+    unredactedFromSecureObject: false,
+    errorCode: '001003',
+    age: 0,
+    sqlState: '42000',
+    queryId: null,
+    line: -1,
+    pos: -1,
+    type: 'COMPILATION'
+  }
+}
+
+Test 5: Cleanup dashboard
+Activity logging failed: Error [OperationFailedError]: SQL Compilation error: Invalid Operation INSERT on Dynamic Table
+    at createError (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/errors.js:539:17)
+    at exports.createOperationFailedError (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/errors.js:342:10)
+    at Object.callback (/Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/services/sf.js:663:28)
+    at /Users/chandler/claude7/GrowthZone/SnowflakePOC2/node_modules/snowflake-sdk/lib/http/base.js:38:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: '002706',
+  sqlState: '23001',
+  data: {
+    internalError: false,
+    unredactedFromSecureObject: false,
+    errorCode: '002706',
+    age: 0,
+    sqlState: '23001',
+    queryId: null,
+    line: -1,
+    pos: -1,
+    type: 'COMPILATION'
+  }
+}
+✅ Dashboard cleaned up
+
+==================================================
+✅ ALL TESTS PASSED
+==================================================
+🔐 Using key-pair authentication for CLAUDE_CODE_AI_AGENT
+{"level":"INFO","message":"[11:58:40.718 AM]: Creating new connection object"}
+{"level":"INFO","message":"[11:58:40.859 AM]: Creating Connection[id: 0e6701d2-4460-4512-8e5f-3c04534517cd] with host: uec18397.us-east-1.snowflakecomputing.com, account: uec18397, accessUrl: https://uec18397.us-east-1.snowflakecomputing.com, user: CLAUDE_CODE_AI_AGENT, password is not provided, role: undefined, database: CLAUDE_BI, schema: MCP, warehouse: CLAUDE_AGENT_WH, region: us-east-1, authenticator: SNOWFLAKE_JWT, ocsp mode: FAIL_OPEN, os: darwin, os version: 22.6.0"}
+{"level":"INFO","message":"[11:58:40.860 AM]: Connection[id: 0e6701d2-4460-4512-8e5f-3c04534517cd] additional details: passcode in password is provided, passcode is not provided, private key is provided, application: undefined, client name: snowflake-sdk, client version: 1.15.0, retry timeout: 300, private key path: undefined, private key pass is not provided, client store temporary credential: false, browser response timeout: 120000"}
+{"level":"INFO","message":"[11:58:40.861 AM]: Connection[id: 0e6701d2-4460-4512-8e5f-3c04534517cd] - connection object created successfully."}
+{"level":"INFO","message":"[11:58:40.862 AM]: Connection[id: 0e6701d2-4460-4512-8e5f-3c04534517cd] - connecting. Associated Snowflake domain: GLOBAL"}
+{"level":"INFO","message":"[11:58:40.879 AM]: Connection[id: 0e6701d2-4460-4512-8e5f-3c04534517cd] - authentication successful using: SNOWFLAKE_JWT"}
+{"level":"INFO","message":"[11:58:40.880 AM]: Trying to initialize Easy Logging"}
+{"level":"INFO","message":"[11:58:40.890 AM]: No client config detected."}
+{"level":"INFO","message":"[11:58:40.891 AM]: No config file path found. Client config will not be used."}
+{"level":"INFO","message":"[11:58:40.892 AM]: Easy Logging is disabled as no config has been found"}
+{"level":"INFO","message":"[11:58:40.898 AM]: Connection[id: 0e6701d2-4460-4512-8e5f-3c04534517cd] - connected successfully after 36.05227100000002 milliseconds"}
+✅ Connected to Snowflake as CLAUDE_CODE_AI_AGENT
+📊 Session ID: cc-1755359920713-gqepglhqf
+✅ Logged: npm.test.end
+🔌 Disconnected from Snowflake

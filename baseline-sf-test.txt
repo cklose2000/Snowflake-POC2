@@ -1,0 +1,28 @@
+🔧 Executing SQL: SELECT 'baseline-connection-test' as status, CURRENT_TIMESTAMP() as ts
+
+🔐 Using key-pair authentication for CLAUDE_CODE_AI_AGENT
+{"level":"INFO","message":"[11:58:16.104 AM]: Creating new connection object"}
+{"level":"INFO","message":"[11:58:16.264 AM]: Creating Connection[id: f2eee45a-ee3d-42bb-8c0b-a8f2d67aeea7] with host: uec18397.us-east-1.snowflakecomputing.com, account: uec18397, accessUrl: https://uec18397.us-east-1.snowflakecomputing.com, user: CLAUDE_CODE_AI_AGENT, password is not provided, role: undefined, database: CLAUDE_BI, schema: MCP, warehouse: CLAUDE_AGENT_WH, region: us-east-1, authenticator: SNOWFLAKE_JWT, ocsp mode: FAIL_OPEN, os: darwin, os version: 22.6.0"}
+{"level":"INFO","message":"[11:58:16.265 AM]: Connection[id: f2eee45a-ee3d-42bb-8c0b-a8f2d67aeea7] additional details: passcode in password is provided, passcode is not provided, private key is provided, application: undefined, client name: snowflake-sdk, client version: 1.15.0, retry timeout: 300, private key path: undefined, private key pass is not provided, client store temporary credential: false, browser response timeout: 120000"}
+{"level":"INFO","message":"[11:58:16.266 AM]: Connection[id: f2eee45a-ee3d-42bb-8c0b-a8f2d67aeea7] - connection object created successfully."}
+{"level":"INFO","message":"[11:58:16.267 AM]: Connection[id: f2eee45a-ee3d-42bb-8c0b-a8f2d67aeea7] - connecting. Associated Snowflake domain: GLOBAL"}
+{"level":"INFO","message":"[11:58:16.284 AM]: Connection[id: f2eee45a-ee3d-42bb-8c0b-a8f2d67aeea7] - authentication successful using: SNOWFLAKE_JWT"}
+{"level":"INFO","message":"[11:58:16.285 AM]: Trying to initialize Easy Logging"}
+{"level":"INFO","message":"[11:58:16.291 AM]: No client config detected."}
+{"level":"INFO","message":"[11:58:16.292 AM]: No config file path found. Client config will not be used."}
+{"level":"INFO","message":"[11:58:16.292 AM]: Easy Logging is disabled as no config has been found"}
+{"level":"INFO","message":"[11:58:16.298 AM]: Connection[id: f2eee45a-ee3d-42bb-8c0b-a8f2d67aeea7] - connected successfully after 31.506159000000025 milliseconds"}
+✅ Connected to Snowflake as CLAUDE_CODE_AI_AGENT
+📊 Session ID: cc-1755359896100-w14t4fsk5
+✅ Query executed successfully
+⏱️  Execution time: 89ms
+📊 Rows returned: 1
+
+Results:
+[
+  {
+    "STATUS": "baseline-connection-test",
+    "TS": "2025-08-16 08:58:17.434 -0700"
+  }
+]
+🔌 Disconnected from Snowflake

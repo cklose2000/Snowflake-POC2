@@ -1,0 +1,164 @@
+{
+  "refactor_timestamp": "2025-08-16T14:30:00Z",
+  "baseline_captured": true,
+  "original_structure": {
+    "root_js_files": [
+      "deploy-auth.js",
+      "deploy-auth-fixed.js",
+      "deploy-auth-simple.js",
+      "deploy-enhanced-procedures.js",
+      "deploy-logging.js",
+      "deploy-native-procedures.js",
+      "test-auth-simple.js",
+      "test-auth-system.js",
+      "test-direct-ws.js",
+      "test-enhanced-logging.js",
+      "test-enhanced-procedures.js",
+      "test-key-connection.js",
+      "test-logging-check.js",
+      "test-logging-query.js",
+      "test-mcp-integration.js",
+      "test-mcp-secure-flow.js",
+      "test-mcp-snowflake.js",
+      "test-table-structure.js",
+      "test-token-storage.js",
+      "test-ws.js"
+    ],
+    "root_check_files": [
+      "check-events.js",
+      "check-privileges.js",
+      "check-table-structure.js"
+    ],
+    "sql_variants": [
+      "scripts/dashboard-procs.sql",
+      "scripts/dashboard-procs-final.sql",
+      "scripts/dashboard-procs-fixed.sql",
+      "scripts/dashboard-procs-simple.sql",
+      "scripts/dashboard-procs-variant.sql",
+      "scripts/dashboard-procs-working.sql"
+    ],
+    "sensitive_files": [
+      "claude_code_rsa_key.p8",
+      "claude_code_rsa_key.pem",
+      "claude_code_rsa_key.pub",
+      ".env"
+    ]
+  },
+  "symlinks_created": [
+    {
+      "link": "deploy-activation-system.js",
+      "target": "scripts/deploy/deploy-activation-system.js"
+    },
+    {
+      "link": "deploy-auth-fixed.js",
+      "target": "scripts/deploy/deploy-auth-fixed.js"
+    },
+    {
+      "link": "deploy-auth-simple.js",
+      "target": "scripts/deploy/deploy-auth-simple.js"
+    },
+    {
+      "link": "deploy-auth.js",
+      "target": "scripts/deploy/deploy-auth.js"
+    },
+    {
+      "link": "deploy-enhanced-procedures.js",
+      "target": "scripts/deploy/deploy-enhanced-procedures.js"
+    },
+    {
+      "link": "deploy-logging.js",
+      "target": "scripts/deploy/deploy-logging.js"
+    },
+    {
+      "link": "deploy-native-procedures.js",
+      "target": "scripts/deploy/deploy-native-procedures.js"
+    },
+    {
+      "link": "test-auth-simple.js",
+      "target": "tests/scripts/test-auth-simple.js"
+    },
+    {
+      "link": "test-auth-system.js",
+      "target": "tests/scripts/test-auth-system.js"
+    },
+    {
+      "link": "test-direct-ws.js",
+      "target": "tests/scripts/test-direct-ws.js"
+    },
+    {
+      "link": "test-enhanced-logging.js",
+      "target": "tests/scripts/test-enhanced-logging.js"
+    },
+    {
+      "link": "test-enhanced-procedures.js",
+      "target": "tests/scripts/test-enhanced-procedures.js"
+    },
+    {
+      "link": "test-key-connection.js",
+      "target": "tests/scripts/test-key-connection.js"
+    },
+    {
+      "link": "test-logging-check.js",
+      "target": "tests/scripts/test-logging-check.js"
+    },
+    {
+      "link": "test-logging-query.js",
+      "target": "tests/scripts/test-logging-query.js"
+    },
+    {
+      "link": "test-mcp-integration.js",
+      "target": "tests/scripts/test-mcp-integration.js"
+    },
+    {
+      "link": "test-mcp-secure-flow.js",
+      "target": "tests/scripts/test-mcp-secure-flow.js"
+    },
+    {
+      "link": "test-mcp-snowflake.js",
+      "target": "tests/scripts/test-mcp-snowflake.js"
+    },
+    {
+      "link": "test-table-structure.js",
+      "target": "tests/scripts/test-table-structure.js"
+    },
+    {
+      "link": "test-token-storage.js",
+      "target": "tests/scripts/test-token-storage.js"
+    },
+    {
+      "link": "test-ws.js",
+      "target": "tests/scripts/test-ws.js"
+    },
+    {
+      "link": "check-events.js",
+      "target": "scripts/checks/check-events.js"
+    },
+    {
+      "link": "check-privileges.js",
+      "target": "scripts/checks/check-privileges.js"
+    },
+    {
+      "link": "check-table-structure.js",
+      "target": "scripts/checks/check-table-structure.js"
+    },
+    {
+      "link": "verify-logging.js",
+      "target": "scripts/checks/verify-logging.js"
+    }
+  ],
+  "files_moved": [
+    {
+      "from": "claude_code_rsa_key.p8",
+      "to": "~/.snowflake-keys/claude_code_rsa_key.p8"
+    },
+    {
+      "from": "claude_code_rsa_key.pem",
+      "to": "~/.snowflake-keys/claude_code_rsa_key.pem"
+    },
+    {
+      "from": "claude_code_rsa_key.pub",
+      "to": "~/.snowflake-keys/claude_code_rsa_key.pub"
+    }
+  ],
+  "can_rollback": true
+}

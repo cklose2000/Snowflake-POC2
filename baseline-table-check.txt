@@ -1,0 +1,30 @@
+🔧 Executing SQL: SELECT TABLE_SCHEMA||'.'||TABLE_NAME as table_name FROM CLAUDE_BI.INFORMATION_SCHEMA.TABLES WHERE TABLE_CATALOG='CLAUDE_BI' AND TABLE_TYPE IN ('BASE TABLE','DYNAMIC TABLE') ORDER BY 1
+
+🔐 Using key-pair authentication for CLAUDE_CODE_AI_AGENT
+{"level":"INFO","message":"[11:58:55.409 AM]: Creating new connection object"}
+{"level":"INFO","message":"[11:58:55.466 AM]: Creating Connection[id: a244dd83-8985-485c-a11b-62cc40980c7b] with host: uec18397.us-east-1.snowflakecomputing.com, account: uec18397, accessUrl: https://uec18397.us-east-1.snowflakecomputing.com, user: CLAUDE_CODE_AI_AGENT, password is not provided, role: undefined, database: CLAUDE_BI, schema: MCP, warehouse: CLAUDE_AGENT_WH, region: us-east-1, authenticator: SNOWFLAKE_JWT, ocsp mode: FAIL_OPEN, os: darwin, os version: 22.6.0"}
+{"level":"INFO","message":"[11:58:55.468 AM]: Connection[id: a244dd83-8985-485c-a11b-62cc40980c7b] additional details: passcode in password is provided, passcode is not provided, private key is provided, application: undefined, client name: snowflake-sdk, client version: 1.15.0, retry timeout: 300, private key path: undefined, private key pass is not provided, client store temporary credential: false, browser response timeout: 120000"}
+{"level":"INFO","message":"[11:58:55.469 AM]: Connection[id: a244dd83-8985-485c-a11b-62cc40980c7b] - connection object created successfully."}
+{"level":"INFO","message":"[11:58:55.470 AM]: Connection[id: a244dd83-8985-485c-a11b-62cc40980c7b] - connecting. Associated Snowflake domain: GLOBAL"}
+{"level":"INFO","message":"[11:58:55.484 AM]: Connection[id: a244dd83-8985-485c-a11b-62cc40980c7b] - authentication successful using: SNOWFLAKE_JWT"}
+{"level":"INFO","message":"[11:58:55.486 AM]: Trying to initialize Easy Logging"}
+{"level":"INFO","message":"[11:58:55.492 AM]: No client config detected."}
+{"level":"INFO","message":"[11:58:55.493 AM]: No config file path found. Client config will not be used."}
+{"level":"INFO","message":"[11:58:55.493 AM]: Easy Logging is disabled as no config has been found"}
+{"level":"INFO","message":"[11:58:55.499 AM]: Connection[id: a244dd83-8985-485c-a11b-62cc40980c7b] - connected successfully after 28.921785999999884 milliseconds"}
+✅ Connected to Snowflake as CLAUDE_CODE_AI_AGENT
+📊 Session ID: cc-1755359935407-ib791zdnh
+✅ Query executed successfully
+⏱️  Execution time: 1165ms
+📊 Rows returned: 2
+
+Results:
+[
+  {
+    "TABLE_NAME": "ACTIVITY.EVENTS"
+  },
+  {
+    "TABLE_NAME": "LANDING.RAW_EVENTS"
+  }
+]
+🔌 Disconnected from Snowflake

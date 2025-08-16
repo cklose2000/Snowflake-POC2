@@ -16,7 +16,31 @@
     "_test": "node tests/integration/test-dashboard.js",
     "codegen": "sf log --action npm.codegen.begin 2>/dev/null; node scripts/codegen-schema.js; code=$?; sf log --action npm.codegen.end --attrs '{\"exit_code\":'$code'}' 2>/dev/null; exit $code",
     "_codegen": "node scripts/codegen-schema.js",
-    "prestart": "npm run codegen"
+    "prestart": "npm run codegen",
+    
+    "_comment": "=== NEW UNIFIED CLI COMMANDS ===",
+    "deploy:auth:password": "node scripts/deploy/cli.js deploy:auth:password",
+    "deploy:auth:keypair": "node scripts/deploy/cli.js deploy:auth:keypair", 
+    "deploy:auth:unified": "node scripts/deploy/cli.js deploy:auth:unified",
+    "deploy:native": "node scripts/deploy/cli.js deploy:native",
+    "deploy:enhanced": "node scripts/deploy/cli.js deploy:enhanced",
+    "deploy:logging": "node scripts/deploy/cli.js deploy:logging",
+    
+    "test:integration": "node scripts/deploy/cli.js test:integration",
+    "test:auth": "node scripts/deploy/cli.js test:auth",
+    "test:mcp": "node scripts/deploy/cli.js test:mcp",
+    "test:connection": "node scripts/deploy/cli.js test:connection",
+    "test:logging": "node scripts/deploy/cli.js test:logging",
+    
+    "check:guards": "node scripts/deploy/cli.js check:guards",
+    "check:events": "node scripts/deploy/cli.js check:events",
+    "check:privileges": "node scripts/deploy/cli.js check:privileges",
+    "check:tables": "node scripts/deploy/cli.js check:tables",
+    "verify:logging": "node scripts/deploy/cli.js verify:logging",
+    
+    "sql:deploy": "node scripts/deploy/cli.js sql:deploy",
+    "help": "node scripts/deploy/cli.js help",
+    "cli:status": "node scripts/deploy/cli.js status"
   },
   "dependencies": {
     "express": "^4.18.0",

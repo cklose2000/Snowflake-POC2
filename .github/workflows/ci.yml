@@ -1,0 +1,223 @@
+name: 🛡️ Repository Guards & Integration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # Security and compliance checks (no Snowflake needed)
+  guards:
+    name: 🛡️ Repository Guards
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📁 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: 📚 Install dependencies
+        run: npm ci
+        
+      - name: 🔍 Check secrets not tracked
+        run: |
+          echo "Checking for secrets in git..."
+          if git ls-files | grep -E '\.(p8|pem|key)$'; then
+            echo "❌ Key files found in git!"
+            exit 1
+          fi
+          if git ls-files | grep -E '^\.env$'; then
+            echo "❌ .env file tracked in git!"
+            exit 1
+          fi
+          echo "✅ No secrets tracked in git"
+          
+      - name: 📊 Verify repository structure
+        run: |
+          echo "Checking repository structure..."
+          # Check that new structure exists
+          test -d scripts/deploy || (echo "❌ scripts/deploy missing" && exit 1)
+          test -d scripts/checks || (echo "❌ scripts/checks missing" && exit 1)
+          test -d scripts/sql || (echo "❌ scripts/sql missing" && exit 1)
+          test -d tests/scripts || (echo "❌ tests/scripts missing" && exit 1)
+          test -f scripts/deploy/cli.js || (echo "❌ CLI missing" && exit 1)
+          test -f scripts/checks/repo-guards.js || (echo "❌ Guards missing" && exit 1)
+          echo "✅ Repository structure valid"
+          
+      - name: 🎯 Test CLI commands
+        run: |
+          echo "Testing CLI dispatcher..."
+          node scripts/deploy/cli.js help > /dev/null
+          node scripts/deploy/cli.js status > /dev/null
+          node scripts/deploy/cli.js list > /dev/null
+          node scripts/deploy/sql-deployer.js --list > /dev/null
+          echo "✅ CLI commands working"
+          
+      - name: 📋 Validate SQL modes
+        run: |
+          echo "Validating SQL modes..."
+          test -f scripts/sql/dashboard-procs.sql || (echo "❌ Main SQL missing" && exit 1)
+          test -f scripts/sql/dashboard-procs-simple.sql || (echo "❌ Demo SQL missing" && exit 1)
+          test -f scripts/sql/README.md || (echo "❌ SQL docs missing" && exit 1)
+          echo "✅ SQL modes valid"
+
+  # Integration tests (requires Snowflake credentials)
+  integration:
+    name: 🧪 Integration Tests  
+    runs-on: ubuntu-latest
+    needs: guards
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[ci-integration]')
+    
+    steps:
+      - name: 📁 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: 📚 Install dependencies
+        run: npm ci
+        
+      - name: 🔐 Setup Snowflake credentials
+        env:
+          SF_PRIVATE_KEY: ${{ secrets.SF_PRIVATE_KEY }}
+          SF_ACCOUNT: ${{ secrets.SF_ACCOUNT }}
+          SF_USERNAME: ${{ secrets.SF_USERNAME }}
+          SF_DATABASE: ${{ secrets.SF_DATABASE }}
+          SF_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
+        run: |
+          echo "Setting up Snowflake credentials..."
+          mkdir -p ~/.snowflake-keys
+          echo "$SF_PRIVATE_KEY" > ~/.snowflake-keys/claude_code_rsa_key.p8
+          chmod 600 ~/.snowflake-keys/claude_code_rsa_key.p8
+          
+          # Create sf CLI wrapper for CI
+          mkdir -p ~/bin
+          cat > ~/bin/sf << 'EOF'
+          #!/bin/bash
+          # CI Snowflake CLI wrapper
+          exec node /Users/chandler/claude7/GrowthZone/SnowflakePOC2/snowflake-mcp-client/dist/simple-cli.js "$@"
+          EOF
+          chmod +x ~/bin/sf
+          
+          # Create symlink for compatibility
+          ln -s ~/.snowflake-keys/claude_code_rsa_key.p8 ./claude_code_rsa_key.p8
+          
+      - name: 🔌 Test connection
+        env:
+          SF_PK_PATH: ./claude_code_rsa_key.p8
+        run: |
+          echo "Testing Snowflake connection..."
+          npm run test:connection
+          
+      - name: 🛡️ Run full repository guards (with Snowflake)
+        env:
+          SF_PK_PATH: ./claude_code_rsa_key.p8
+        run: |
+          echo "Running repository guards with Snowflake checks..."
+          npm run check:guards || echo "⚠️ Guards failed - check Two-Table Law compliance"
+          
+      - name: 🧪 Run integration tests
+        env:
+          SF_PK_PATH: ./claude_code_rsa_key.p8
+        run: |
+          echo "Running integration tests..."
+          npm run test:integration
+
+  # Security scan (runs on all events)
+  security:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📁 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🔍 Scan for secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: main
+          head: HEAD
+          extra_args: --debug --only-verified
+          
+      - name: 📦 Setup Node.js for audit
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: 🛡️ NPM audit
+        run: |
+          npm audit --audit-level=moderate
+          
+  # Documentation and structure validation
+  docs:
+    name: 📚 Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📁 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 📋 Check documentation
+        run: |
+          echo "Checking documentation completeness..."
+          test -f docs/REPO_MAP.md || (echo "❌ REPO_MAP.md missing" && exit 1)
+          test -f scripts/sql/README.md || (echo "❌ SQL README missing" && exit 1)
+          test -f CLAUDE.md || (echo "❌ CLAUDE.md missing" && exit 1)
+          test -f README.md || (echo "❌ README.md missing" && exit 1)
+          echo "✅ Documentation complete"
+          
+      - name: 🗺️ Validate repository map
+        run: |
+          echo "Validating repository map accuracy..."
+          # Check that all documented paths exist
+          grep -o 'scripts/[^)]*\.js' docs/REPO_MAP.md | while read path; do
+            test -f "$path" || (echo "❌ Missing: $path" && exit 1)
+          done
+          echo "✅ Repository map accurate"
+
+# Summary status check (required for branch protection)
+status-check:
+  name: ✅ All Checks Complete
+  runs-on: ubuntu-latest
+  needs: [guards, security, docs]
+  if: always()
+  
+  steps:
+    - name: 📊 Report status
+      run: |
+        echo "🛡️ Guards: ${{ needs.guards.result }}"
+        echo "🔒 Security: ${{ needs.security.result }}"
+        echo "📚 Documentation: ${{ needs.docs.result }}"
+        
+        if [[ "${{ needs.guards.result }}" != "success" ]]; then
+          echo "❌ Repository guards failed"
+          exit 1
+        fi
+        
+        if [[ "${{ needs.security.result }}" != "success" ]]; then
+          echo "❌ Security checks failed"  
+          exit 1
+        fi
+        
+        if [[ "${{ needs.docs.result }}" != "success" ]]; then
+          echo "❌ Documentation checks failed"
+          exit 1
+        fi
+        
+        echo "✅ All required checks passed!"

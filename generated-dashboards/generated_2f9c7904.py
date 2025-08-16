@@ -1,6 +1,6 @@
 """
 ACTIVITY_DASHBOARD - Generated Dashboard
-Generated: 2025-08-14T10:31:46.450Z
+Generated: 2025-08-16T16:13:05.437Z
 """
 
 import streamlit as st
@@ -27,27 +27,6 @@ def get_connection():
 conn = get_connection()
 
 # Load data
-
-@st.cache_data(ttl=3600)
-def load_activity_summary_data():
-    query = "SELECT * FROM activity_dashboard_activity_summary_2f9c7904"
-    return pd.read_sql(query, conn)
-
-activity_summary_df = load_activity_summary_data()
-
-@st.cache_data(ttl=3600)
-def load_activity_counts_data():
-    query = "SELECT * FROM activity_dashboard_activity_counts_2f9c7904"
-    return pd.read_sql(query, conn)
-
-activity_counts_df = load_activity_counts_data()
-
-@st.cache_data(ttl=3600)
-def load_top_activities_data():
-    query = "SELECT * FROM activity_dashboard_top_activities_2f9c7904"
-    return pd.read_sql(query, conn)
-
-top_activities_df = load_top_activities_data()
 
 
 # Display panels

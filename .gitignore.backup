@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment
+.env
+.env.local
+
+# Build outputs
+dist/
+build/
+
+# Logs
+*.log
+logs/
+snowflake.log*
+server.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary
+tmp/
+temp/
+
+# Generated files
+src/generated-schema.js
+generated-dashboards/*.pem
+*.pub
+.env
+.env.*
+!.env.example
+!.env.claude_code.example
+.claude/settings.local.json
