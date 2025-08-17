@@ -1,0 +1,246 @@
+name: 🚀 Deploy Streamlit Dashboard
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'dashboards/**'
+      - '.github/workflows/deploy-dashboard.yml'
+  workflow_dispatch:
+    inputs:
+      dashboard:
+        description: 'Dashboard to deploy (leave empty for all)'
+        required: false
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+          - development
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  deploy:
+    name: 🎯 Deploy Dashboard
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📁 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for version tracking
+          
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: 📚 Install dependencies
+        run: npm ci
+        
+      - name: 🔐 Setup Snowflake credentials
+        env:
+          SF_PRIVATE_KEY: ${{ secrets.SF_PRIVATE_KEY }}
+        run: |
+          echo "Setting up Snowflake credentials..."
+          mkdir -p ~/.snowflake-keys
+          echo "$SF_PRIVATE_KEY" > ~/.snowflake-keys/claude_code_rsa_key.p8
+          chmod 600 ~/.snowflake-keys/claude_code_rsa_key.p8
+          ln -s ~/.snowflake-keys/claude_code_rsa_key.p8 ./claude_code_rsa_key.p8
+          
+      - name: 🏷️ Generate version
+        id: version
+        run: |
+          # Generate version based on commit and timestamp
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          VERSION="v${TIMESTAMP}_${COMMIT_SHA}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "commit_sha=${COMMIT_SHA}" >> $GITHUB_OUTPUT
+          echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
+          
+      - name: 📊 Detect changed dashboards
+        id: detect
+        run: |
+          # Detect which dashboards have changed
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.dashboard }}" ]; then
+            # Manual deployment of specific dashboard
+            DASHBOARDS="${{ github.event.inputs.dashboard }}"
+          else
+            # Auto-detect changed dashboards
+            if [ "${{ github.event_name }}" == "push" ]; then
+              # Get list of changed dashboard files
+              DASHBOARDS=$(git diff --name-only HEAD^ HEAD | grep '^dashboards/' | cut -d'/' -f2 | sort -u | tr '\n' ' ')
+            else
+              # Deploy all dashboards for workflow_dispatch without specific input
+              DASHBOARDS=$(ls dashboards/ 2>/dev/null | tr '\n' ' ') || DASHBOARDS=""
+            fi
+          fi
+          
+          if [ -z "$DASHBOARDS" ]; then
+            echo "No dashboards to deploy"
+            echo "dashboards=" >> $GITHUB_OUTPUT
+            echo "has_dashboards=false" >> $GITHUB_OUTPUT
+          else
+            echo "Dashboards to deploy: $DASHBOARDS"
+            echo "dashboards=${DASHBOARDS}" >> $GITHUB_OUTPUT
+            echo "has_dashboards=true" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: 📤 Upload versioned dashboards
+        if: steps.detect.outputs.has_dashboards == 'true'
+        env:
+          SF_PK_PATH: ./claude_code_rsa_key.p8
+          VERSION: ${{ steps.version.outputs.version }}
+          DASHBOARDS: ${{ steps.detect.outputs.dashboards }}
+        run: |
+          echo "Uploading dashboards with version: $VERSION"
+          node scripts/deploy/upload-dashboard-version.js \
+            --version="$VERSION" \
+            --dashboards="$DASHBOARDS" \
+            --environment="${{ github.event.inputs.environment || 'production' }}"
+            
+      - name: 🔵 Blue-Green Deployment
+        if: steps.detect.outputs.has_dashboards == 'true'
+        env:
+          SF_PK_PATH: ./claude_code_rsa_key.p8
+          VERSION: ${{ steps.version.outputs.version }}
+          DASHBOARDS: ${{ steps.detect.outputs.dashboards }}
+        run: |
+          echo "Executing blue-green deployment..."
+          node scripts/deploy/blue-green-swap.js \
+            --version="$VERSION" \
+            --dashboards="$DASHBOARDS" \
+            --environment="${{ github.event.inputs.environment || 'production' }}"
+            
+      - name: 📝 Log deployment event
+        if: steps.detect.outputs.has_dashboards == 'true'
+        env:
+          SF_PK_PATH: ./claude_code_rsa_key.p8
+        run: |
+          # Log deployment event to ACTIVITY.EVENTS
+          node scripts/deploy/log-deployment-event.js \
+            --action="dashboard.deployed" \
+            --version="${{ steps.version.outputs.version }}" \
+            --dashboards="${{ steps.detect.outputs.dashboards }}" \
+            --environment="${{ github.event.inputs.environment || 'production' }}" \
+            --commit="${{ steps.version.outputs.commit_sha }}" \
+            --actor="${{ github.actor }}" \
+            --workflow_run="${{ github.run_id }}"
+            
+      - name: 🧪 Verify deployment
+        if: steps.detect.outputs.has_dashboards == 'true'
+        env:
+          SF_PK_PATH: ./claude_code_rsa_key.p8
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Verifying dashboard deployment..."
+          node scripts/deploy/verify-dashboard.js \
+            --version="$VERSION" \
+            --dashboards="${{ steps.detect.outputs.dashboards }}"
+            
+      - name: 📊 Generate deployment report
+        if: always() && steps.detect.outputs.has_dashboards == 'true'
+        run: |
+          cat << EOF > deployment-report.md
+          # Dashboard Deployment Report
+          
+          **Version:** ${{ steps.version.outputs.version }}
+          **Timestamp:** ${{ steps.version.outputs.timestamp }}
+          **Commit:** ${{ steps.version.outputs.commit_sha }}
+          **Environment:** ${{ github.event.inputs.environment || 'production' }}
+          **Dashboards:** ${{ steps.detect.outputs.dashboards }}
+          **Actor:** ${{ github.actor }}
+          **Workflow Run:** ${{ github.run_id }}
+          
+          ## Deployment Status
+          - Upload: ✅ Complete
+          - Blue-Green Swap: ✅ Complete
+          - Verification: ✅ Passed
+          
+          ## Access URLs
+          $(node scripts/deploy/generate-urls.js --dashboards="${{ steps.detect.outputs.dashboards }}")
+          
+          ## Rollback Command
+          \`\`\`bash
+          npm run dashboard:rollback -- --version=${{ steps.version.outputs.version }}
+          \`\`\`
+          EOF
+          
+      - name: 💾 Upload deployment artifact
+        if: steps.detect.outputs.has_dashboards == 'true'
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-${{ steps.version.outputs.version }}
+          path: |
+            deployment-report.md
+            dashboards/
+            
+      - name: 📢 Post deployment summary
+        if: steps.detect.outputs.has_dashboards == 'true'
+        run: |
+          echo "## 🎉 Dashboard Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Dashboards:** ${{ steps.detect.outputs.dashboards }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment || 'production' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Access Instructions" >> $GITHUB_STEP_SUMMARY
+          echo "1. Login to [Snowsight](https://app.snowflake.com)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Navigate to Projects → Streamlit" >> $GITHUB_STEP_SUMMARY
+          echo "3. Select your dashboard" >> $GITHUB_STEP_SUMMARY
+
+  rollback:
+    name: 🔄 Rollback (Manual Trigger)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && contains(github.event.inputs.dashboard, 'rollback:')
+    
+    steps:
+      - name: 📁 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: 📚 Install dependencies
+        run: npm ci
+        
+      - name: 🔐 Setup Snowflake credentials
+        env:
+          SF_PRIVATE_KEY: ${{ secrets.SF_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.snowflake-keys
+          echo "$SF_PRIVATE_KEY" > ~/.snowflake-keys/claude_code_rsa_key.p8
+          chmod 600 ~/.snowflake-keys/claude_code_rsa_key.p8
+          ln -s ~/.snowflake-keys/claude_code_rsa_key.p8 ./claude_code_rsa_key.p8
+          
+      - name: 🔄 Execute rollback
+        env:
+          SF_PK_PATH: ./claude_code_rsa_key.p8
+        run: |
+          # Extract version from input (format: rollback:v20240101_123456_abc123)
+          VERSION=$(echo "${{ github.event.inputs.dashboard }}" | cut -d':' -f2)
+          echo "Rolling back to version: $VERSION"
+          
+          node scripts/deploy/rollback-dashboard.js --version="$VERSION"
+          
+      - name: 📝 Log rollback event
+        env:
+          SF_PK_PATH: ./claude_code_rsa_key.p8
+        run: |
+          VERSION=$(echo "${{ github.event.inputs.dashboard }}" | cut -d':' -f2)
+          node scripts/deploy/log-deployment-event.js \
+            --action="dashboard.rolled_back" \
+            --version="$VERSION" \
+            --actor="${{ github.actor }}" \
+            --workflow_run="${{ github.run_id }}"

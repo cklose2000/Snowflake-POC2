@@ -41,7 +41,14 @@ const commands = {
   // Utilities
   'sql:deploy':          './scripts/deploy/sql-deployer.js',
   'app:put':             './scripts/deploy/streamlit-put.js',
-  'app:create':          './scripts/deploy/streamlit-create.js'
+  'app:create':          './scripts/deploy/streamlit-create.js',
+  
+  // Dashboard SDLC
+  'dashboard:upload':    './scripts/deploy/upload-dashboard-version.js',
+  'dashboard:deploy':    './scripts/deploy/blue-green-swap.js',
+  'dashboard:rollback':  './scripts/deploy/rollback-dashboard.js',
+  'dashboard:verify':    './scripts/deploy/verify-dashboard.js',
+  'dashboard:urls':      './scripts/deploy/generate-urls.js'
 };
 
 // Helper commands that show useful information
@@ -88,6 +95,13 @@ Categories:
   sql:deploy             - Deploy SQL with mode selection
   app:put               - Put Streamlit app to stage
   app:create            - Create Streamlit application
+
+📊 DASHBOARD SDLC
+  dashboard:upload       - Upload versioned dashboard to stage
+  dashboard:deploy       - Blue-green dashboard deployment
+  dashboard:rollback     - Rollback to previous version
+  dashboard:verify       - Verify dashboard deployment
+  dashboard:urls         - Generate dashboard access URLs
   
 Examples:
   npm run deploy:auth:keypair

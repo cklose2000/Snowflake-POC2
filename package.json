@@ -27,6 +27,13 @@
     "_comment_sql": "=== SQL DEPLOYMENT ===",
     "sql:deploy": "node scripts/deploy/cli.js sql:deploy",
     
+    "_comment_dashboard": "=== DASHBOARD SDLC ===",
+    "dashboard:upload": "node scripts/deploy/cli.js dashboard:upload",
+    "dashboard:deploy": "node scripts/deploy/cli.js dashboard:deploy",
+    "dashboard:rollback": "node scripts/deploy/cli.js dashboard:rollback",
+    "dashboard:verify": "node scripts/deploy/cli.js dashboard:verify",
+    "dashboard:urls": "node scripts/deploy/cli.js dashboard:urls",
+    
     "_comment_utilities": "=== UTILITIES ===",
     "help": "node scripts/deploy/cli.js help",
     "status": "node scripts/deploy/cli.js status"

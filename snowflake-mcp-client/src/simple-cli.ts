@@ -541,6 +541,166 @@ program
     }
   });
 
+/**
+ * Schema discovery commands - events-only approach
+ */
+program
+  .command('schema')
+  .description('Show current schema context from events (agent discovery)')
+  .action(async () => {
+    try {
+      const client = new SnowflakeSimpleClient();
+      
+      console.log('📊 Schema Discovery (Events-Only)\n');
+      console.log('=================================\n');
+      
+      // Get procedures visible to agents
+      const procResult = await client.executeSql(`
+        SELECT 
+          procedure_name,
+          category,
+          description,
+          signature,
+          is_mcp_compatible,
+          example_call
+        FROM MCP.VW_IS_PROCEDURES 
+        ORDER BY category, procedure_name
+      `);
+      
+      if (procResult.success && procResult.data.length > 0) {
+        console.log('Available Procedures:');
+        procResult.data.forEach((proc: any) => {
+          const compatible = proc.IS_MCP_COMPATIBLE ? '🔗' : '📄';
+          console.log(`  ${compatible} ${proc.PROCEDURE_NAME} (${proc.CATEGORY})`);
+          console.log(`     ${proc.DESCRIPTION}`);
+          console.log(`     Usage: ${proc.EXAMPLE_CALL}`);
+          console.log();
+        });
+      } else {
+        console.log('📭 No procedures discovered from events');
+        console.log('   Run "sf schema:publish" to populate schema discovery');
+      }
+      
+      // Get latest schema version
+      const schemaResult = await client.executeSql(`
+        SELECT 
+          COUNT(*) as object_count,
+          MAX(schema_version) as latest_version,
+          MAX(last_updated) as last_updated
+        FROM MCP.VW_LATEST_SCHEMA
+      `);
+      
+      if (schemaResult.success && schemaResult.data.length > 0) {
+        const stats = schemaResult.data[0];
+        console.log('Schema Statistics:');
+        console.log(`  Objects: ${stats.OBJECT_COUNT}`);
+        console.log(`  Version: ${stats.LATEST_VERSION || 'None'}`);
+        console.log(`  Updated: ${stats.LAST_UPDATED || 'Never'}`);
+      }
+      
+      await client.disconnect();
+    } catch (error: any) {
+      console.error('❌ Schema discovery failed:', error.message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('schema:publish')
+  .description('Capture and publish current schema as events')
+  .option('-s, --schema <schema>', 'Schema to snapshot', 'MCP')
+  .action(async (options) => {
+    try {
+      const client = new SnowflakeSimpleClient();
+      
+      console.log(`📸 Publishing schema snapshot for: ${options.schema}\n`);
+      
+      const result = await client.executeSql(`
+        CALL MCP.PUBLISH_SCHEMA_SNAPSHOT(false, '${options.schema}')
+      `);
+      
+      if (result.success) {
+        const data = result.data[0]?.PUBLISH_SCHEMA_SNAPSHOT;
+        if (data?.result === 'ok') {
+          console.log('✅ Schema snapshot published successfully!');
+          console.log(`   Objects: ${data.objects_published} (${data.procedures} procedures, ${data.views} views)`);
+          console.log(`   Version: ${data.schema_version}`);
+          console.log('\n💡 Agents can now discover schema with "sf schema"');
+        } else {
+          console.error('❌ Schema publish failed:', data?.error || 'Unknown error');
+        }
+      } else {
+        console.error('❌ Schema publish failed:', result.error);
+      }
+      
+      await client.disconnect();
+    } catch (error: any) {
+      console.error('❌ Error:', error.message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('schema:procedures')
+  .description('List procedures available to agents')
+  .option('--category <category>', 'Filter by category (mcp, sdlc, utility)')
+  .action(async (options) => {
+    try {
+      const client = new SnowflakeSimpleClient();
+      
+      let whereClause = '';
+      if (options.category) {
+        whereClause = `WHERE category = '${options.category}'`;
+      }
+      
+      console.log('🔧 Agent-Accessible Procedures\n');
+      console.log('==============================\n');
+      
+      const result = await client.executeSql(`
+        SELECT 
+          procedure_name,
+          category,
+          description,
+          signature,
+          is_mcp_compatible,
+          parameter_type,
+          example_call
+        FROM MCP.VW_IS_PROCEDURES 
+        ${whereClause}
+        ORDER BY category, procedure_name
+      `);
+      
+      if (result.success && result.data.length > 0) {
+        let currentCategory = '';
+        result.data.forEach((proc: any) => {
+          if (proc.CATEGORY !== currentCategory) {
+            currentCategory = proc.CATEGORY;
+            console.log(`\n📁 ${currentCategory.toUpperCase()} Category:`);
+            console.log('─'.repeat(40));
+          }
+          
+          const mcpIcon = proc.IS_MCP_COMPATIBLE ? '🔗 MCP' : '📄 Standard';
+          const paramIcon = proc.PARAMETER_TYPE === 'json' ? '🗃️' : '📝';
+          
+          console.log(`\n  ${mcpIcon} ${proc.PROCEDURE_NAME}`);
+          console.log(`  ${paramIcon} ${proc.SIGNATURE}`);
+          console.log(`  📋 ${proc.DESCRIPTION}`);
+          console.log(`  💡 ${proc.EXAMPLE_CALL}`);
+        });
+        
+        console.log(`\n📊 Total: ${result.data.length} procedures available to agents`);
+      } else {
+        console.log('📭 No procedures found');
+        console.log('   Run "sf schema:publish" first to populate discovery');
+      }
+      
+      await client.disconnect();
+    } catch (error: any) {
+      console.error('❌ Error:', error.message);
+      process.exit(1);
+    }
+  });
+
 // Parse command line arguments
 program.parse();
 
