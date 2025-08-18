@@ -286,3 +286,218 @@ Before writing SQL, ask yourself:
 ```
 
 **Now, with this understanding, proceed with your task WITHOUT creating new tables.**
+
+---
+
+# RULE 2: THE VERIFICATION LAW
+
+## 🔴 DEPLOYMENT SUCCESS REQUIRES PROOF - NO EXCEPTIONS
+
+### ⛔ CLAIMING SUCCESS WITHOUT VERIFICATION IS A CRITICAL FAILURE ⛔
+
+## MANDATORY DEPLOYMENT PROTOCOL
+
+### Before ANY SQL Execution:
+```sql
+-- 1. MANDATORY: Capture current state
+SELECT COUNT(*) as before_count, 
+       MAX(occurred_at) as last_event_time,
+       MD5(COUNT(*) || COALESCE(MAX(occurred_at)::STRING, 'empty')) as state_hash
+FROM CLAUDE_BI.APP.ACTIVITY.EVENTS;
+-- SAVE THIS OUTPUT - YOU WILL NEED IT
+```
+
+### After EVERY SQL Execution:
+```sql
+-- 2. MANDATORY: Verify changes occurred
+SELECT COUNT(*) as after_count,
+       MAX(occurred_at) as new_event_time,
+       MD5(COUNT(*) || COALESCE(MAX(occurred_at)::STRING, 'empty')) as new_state_hash
+FROM CLAUDE_BI.APP.ACTIVITY.EVENTS;
+
+-- 3. MANDATORY: Show the proof
+SELECT * FROM CLAUDE_BI.APP.ACTIVITY.EVENTS 
+WHERE occurred_at > [last_event_time from step 1]
+LIMIT 10;
+```
+
+### REQUIRED OUTPUT FORMAT:
+After EVERY deployment, you MUST output:
+```
+DEPLOYMENT VERIFICATION:
+- Before State Hash: [hash from step 1]
+- After State Hash: [hash from step 2]  
+- Events Created: [after_count - before_count]
+- Proof Events Shown: [yes/no]
+- Success: [true ONLY if hashes differ]
+```
+
+## 🛑 FORBIDDEN DEPLOYMENT PATTERNS
+
+### NEVER DO THIS:
+```
+❌ "Successfully deployed" (without verification)
+❌ "The procedure has been created" (without proof)
+❌ "Done" (without showing state change)
+❌ Proceeding after SQL errors
+❌ Claiming success when state hasn't changed
+```
+
+### ALWAYS DO THIS:
+```
+✅ Show before/after state comparison
+✅ Display actual events created
+✅ Acknowledge when no changes occurred
+✅ Report FAILURE if state unchanged
+✅ Stop immediately on errors
+```
+
+---
+
+# RULE 3: THE ERROR HONESTY LAW
+
+## 🔴 WHEN THINGS FAIL, ADMIT IT IMMEDIATELY
+
+### If you encounter an error:
+1. **STOP** - Do not continue
+2. **REPORT** - Show the EXACT error message
+3. **DO NOT** claim partial success
+4. **DO NOT** say "I'll fix it" and continue
+5. **ASK** for guidance on how to proceed
+
+### Error Output Template:
+```
+DEPLOYMENT FAILED:
+- Operation: [what you were trying to do]
+- Error Message: [exact Snowflake error]
+- State Changed: NO
+- Next Step: Awaiting instructions
+```
+
+---
+
+# RULE 4: THE PROCEDURE-ONLY LAW
+
+## 🎯 FOR COMPLEX OPERATIONS, USE PROCEDURES
+
+### When deploying multiple objects:
+```sql
+-- ❌ WRONG: Executing multiple statements directly
+CREATE VIEW ...;
+CREATE VIEW ...;
+CREATE PROCEDURE ...;
+
+-- ✅ RIGHT: Use a deployment procedure
+CREATE OR REPLACE PROCEDURE DEPLOY_CHANGES()
+RETURNS VARIANT
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    success_count INTEGER DEFAULT 0;
+    error_msg STRING;
+BEGIN
+    -- Deploy with verification
+    BEGIN
+        CREATE OR REPLACE VIEW ...;
+        success_count := success_count + 1;
+    EXCEPTION
+        WHEN OTHER THEN
+            error_msg := SQLERRM;
+            RETURN OBJECT_CONSTRUCT('success', FALSE, 'error', error_msg);
+    END;
+    
+    -- Return proof of execution
+    RETURN OBJECT_CONSTRUCT(
+        'success', TRUE,
+        'objects_created', success_count,
+        'verification_query', 'SELECT * FROM INFORMATION_SCHEMA.VIEWS WHERE CREATED > CURRENT_TIMESTAMP() - INTERVAL ''1 minute'''
+    );
+END;
+$$;
+
+CALL DEPLOY_CHANGES();
+-- Then RUN the verification_query to prove success
+```
+
+---
+
+# RULE 5: THE ROLLBACK READINESS LAW
+
+## 🔄 EVERY CHANGE MUST BE REVERSIBLE
+
+### Before ANY schema change:
+```sql
+-- Save rollback information as an event
+INSERT INTO CLAUDE_BI.APP.LANDING.RAW_EVENTS VALUES (
+    OBJECT_CONSTRUCT(
+        'action', 'deployment.rollback.prepared',
+        'attributes', OBJECT_CONSTRUCT(
+            'object_name', '[object being changed]',
+            'rollback_ddl', GET_DDL('[object_type]', '[object_name]'),
+            'deployment_id', UUID_STRING()
+        ),
+        'occurred_at', CURRENT_TIMESTAMP()
+    ), 'SYSTEM', CURRENT_TIMESTAMP()
+);
+```
+
+---
+
+## 📋 DEPLOYMENT CHECKLIST
+
+Before claiming ANY deployment is complete, verify:
+
+- [ ] Two-table law maintained (no new tables)
+- [ ] Before-state captured and saved
+- [ ] SQL executed without errors
+- [ ] After-state captured and compared
+- [ ] State hash changed (proof of modification)
+- [ ] Sample events displayed as proof
+- [ ] Rollback event created
+- [ ] Verification output provided in required format
+
+If ANY checkbox is unchecked, the deployment FAILED.
+
+---
+
+## 🚫 AUTOMATIC FAILURE CONDITIONS
+
+You have FAILED if:
+1. Created any table besides the two allowed
+2. Claimed success without verification
+3. State hash unchanged after execution
+4. Skipped error messages
+5. Proceeded after failures
+6. Cannot provide proof events
+7. Did not create rollback capability
+
+---
+
+## 🧪 TEST YOUR DEPLOYMENT HONESTY
+
+After every operation, ask yourself:
+1. **Did I verify the change?** → If no, FAILED
+2. **Can I prove it worked?** → If no, FAILED  
+3. **Did the state actually change?** → If no, FAILED
+4. **Could I rollback if needed?** → If no, FAILED
+5. **Did I show the evidence?** → If no, FAILED
+
+---
+
+## 📝 FINAL DEPLOYMENT REMINDER
+
+```
+╔═══════════════════════════════════════════════════════════╗
+║                                                           ║
+║  NO DEPLOYMENT IS SUCCESSFUL WITHOUT VERIFICATION        ║
+║                                                           ║
+║  State Hash MUST change                                  ║
+║  Proof Events MUST be shown                             ║
+║  Errors MUST be acknowledged                            ║
+║  Rollback MUST be possible                              ║
+║                                                           ║
+║  IF YOU CANNOT PROVE IT, YOU DIDN'T DO IT.             ║
+║                                                           ║
+╚═══════════════════════════════════════════════════════════╝
+```
